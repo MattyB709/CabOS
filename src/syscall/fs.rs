@@ -87,7 +87,7 @@ pub fn do_sys_read(
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> u64 {
-    let fd_table = thread.fd_table.lock();
+    let fd_table = thread.process.get().unwrap().fd_table.lock();
     if let Some(file) = fd_table.get(&(fd as i32)) {
         if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
         {
@@ -122,7 +122,7 @@ pub fn do_sys_write(
         }
     }
 
-    let fd_table = thread.fd_table.lock();
+    let fd_table = thread.process.get().unwrap().fd_table.lock();
     if let Some(file) = fd_table.get(&(fd as i32)) {
         if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
         {
@@ -157,12 +157,15 @@ pub fn do_sys_openat(
         VFS.get_root().expect("VFS root not set")
     } else if dirfd == AT_FDCWD {
         thread
+            .process
+            .get()
+            .unwrap()
             .cwd
             .lock()
             .clone()
             .unwrap_or_else(|| VFS.get_root().expect("CWD and VFS root not set"))
     } else {
-        let fd_table = thread.fd_table.lock();
+        let fd_table = thread.process.get().unwrap().fd_table.lock();
         match fd_table.get(&dirfd) {
             Some(file) => file.vnode.clone(),
             None => {
@@ -176,8 +179,9 @@ pub fn do_sys_openat(
 
     if components.is_empty() {
         let file = Arc::new(File::new(current));
-        let mut fd_table = thread.fd_table.lock();
+        let mut fd_table = thread.process.get().unwrap().fd_table.lock();
         let mut fd = 3;
+        // TODO this should really just be an array of option<file> instead of a btree map
         while fd_table.contains_key(&fd) {
             fd += 1;
         }
@@ -211,7 +215,7 @@ pub fn do_sys_openat(
     };
 
     let file = Arc::new(File::new(vnode));
-    let mut fd_table = thread.fd_table.lock();
+    let mut fd_table = thread.process.get().unwrap().fd_table.lock();
     let mut fd = 3;
     while fd_table.contains_key(&fd) {
         fd += 1;
@@ -221,7 +225,7 @@ pub fn do_sys_openat(
 }
 
 pub fn do_sys_close(fd: i32, thread: &Arc<Thread>) -> u64 {
-    let mut fd_table = thread.fd_table.lock();
+    let mut fd_table = thread.process.get().unwrap().fd_table.lock();
     if fd_table.remove(&fd).is_some() {
         0
     } else {

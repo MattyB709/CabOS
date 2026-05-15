@@ -20,6 +20,7 @@ impl File {
 
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, FsError> {
         let mut offset = self.offset.lock();
+        // TODO this is supposed to go through page cache not directly to the filesystem
         let bytes_read = self.vnode.read_unaligned(*offset, buf)?;
         *offset += bytes_read;
         Ok(bytes_read)

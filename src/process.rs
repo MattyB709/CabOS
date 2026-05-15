@@ -1,10 +1,11 @@
-use alloc::sync::Arc;
+use alloc::{collections::BTreeMap, sync::Arc};
 extern crate bitvec;
 use bitvec::prelude::{BitVec, bitvec};
 use spin::Once;
 
 use crate::{
     arch::{Arch, ArchTrait},
+    fs::{file::File, vfs::VNode},
     memory::virtual_memory_2::VirtualMemory,
     sync::{IntMutex, MutexLike, Promise},
     thread::{THIS_THREAD, spawn_thread},
@@ -12,6 +13,14 @@ use crate::{
 
 static MAX_PID: usize = 65536;
 static PID_ALLOCATOR: Once<IntMutex<PidAllocator>> = Once::new();
+
+pub struct Process {
+    pub virtual_memory: VirtualMemory,
+    pub exit_code: Promise<i32>,
+    pub pid: u32,
+    pub fd_table: IntMutex<BTreeMap<i32, Arc<File>>>,
+    pub cwd: IntMutex<Option<Arc<dyn VNode>>>,
+}
 
 struct PidAllocator {
     used: BitVec,
@@ -70,12 +79,6 @@ pub fn init_pid_allocator() {
     PID_ALLOCATOR.call_once(|| IntMutex::new(PidAllocator::new()));
 }
 
-pub struct Process {
-    pub virtual_memory: VirtualMemory,
-    pub exit_code: Promise<i32>,
-    pub pid: u32,
-}
-
 impl Process {
     pub fn new() -> Option<Arc<Self>> {
         let pid = PID_ALLOCATOR.get().unwrap().lock().alloc()?;
@@ -83,6 +86,8 @@ impl Process {
             virtual_memory: VirtualMemory::new(),
             exit_code: Promise::new(),
             pid,
+            fd_table: IntMutex::new(BTreeMap::new()),
+            cwd: IntMutex::new(None),
         }))
     }
 
