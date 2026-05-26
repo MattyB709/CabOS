@@ -45,6 +45,7 @@ pub struct Thread {
     pub process: Once<Arc<Process>>,
 }
 
+
 impl Thread {
     pub fn new() -> Arc<Thread> {
         let tls = ThreadLocalStorageHandler::create();
@@ -532,3 +533,4 @@ pub fn spawn_user_thread(process: &Arc<Process>, pc: usize, sp: usize) {
     GLOBAL_WORK_QUEUE.lock().push_back(thread);
     Arch::wake_other_cores();
 }
+

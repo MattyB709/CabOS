@@ -1,12 +1,16 @@
 use alloc::sync::Arc;
 
 use super::SyscallContext;
-use crate::thread::Thread;
+use crate::thread::{Thread, suspend_to_thread, IDLE};
+use crate::sync::MutexLike;
 
 pub fn sys_exit(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
-    let exit_code = ctx.arg0() as i32;
-    thread.process.get().unwrap().exit_code.set(exit_code);
-    0
+    let process = thread.process.get().unwrap();
+    if process.live_threads.lock().len() == 1 {
+        let exit_code = ctx.arg0() as i32;
+        process.exit_code.set(exit_code);
+    }
+    suspend_to_thread(IDLE.get().unwrap().clone());
 }
 
 pub fn sys_getpid(thread: &Arc<Thread>, _ctx: &impl SyscallContext) -> u64 {

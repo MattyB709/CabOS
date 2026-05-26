@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeMap, sync::Arc};
+use alloc::{sync::{Arc, Weak}, vec::Vec};
 extern crate bitvec;
 use bitvec::prelude::{BitVec, bitvec};
 use spin::Once;
@@ -8,18 +8,25 @@ use crate::{
     fs::{file::File, vfs::VNode},
     memory::virtual_memory_2::VirtualMemory,
     sync::{IntMutex, MutexLike, Promise},
-    thread::{THIS_THREAD, spawn_thread},
+    thread::{Thread, THIS_THREAD, spawn_thread},
 };
 
 static MAX_PID: usize = 65536;
 static PID_ALLOCATOR: Once<IntMutex<PidAllocator>> = Once::new();
 
 pub struct Process {
+    pub live_threads: IntMutex<Vec<Weak<Thread>>>,
     pub virtual_memory: VirtualMemory,
     pub exit_code: Promise<i32>,
     pub pid: u32,
-    pub fd_table: IntMutex<BTreeMap<i32, Arc<File>>>,
+    pub fd_table: IntMutex<Vec<Option<Arc<File>>>>,
     pub cwd: IntMutex<Option<Arc<dyn VNode>>>,
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        PID_ALLOCATOR.get().unwrap().lock().free(self.pid);
+    }
 }
 
 struct PidAllocator {
@@ -60,7 +67,7 @@ impl PidAllocator {
         None
     }
 
-    fn _free(&mut self, pid: u32) {
+    fn free(&mut self, pid: u32) {
         let pid = pid as usize;
         assert!(pid >= 1 && pid <= MAX_PID);
         assert!(self.used[pid], "double free of PID {}", pid);
@@ -86,7 +93,7 @@ impl Process {
             virtual_memory: VirtualMemory::new(),
             exit_code: Promise::new(),
             pid,
-            fd_table: IntMutex::new(BTreeMap::new()),
+            fd_table: IntMutex::new(Vec::new()),
             cwd: IntMutex::new(None),
         }))
     }

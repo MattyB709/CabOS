@@ -11,7 +11,10 @@ use crate::{
     thread::Thread,
 };
 
+// TODO implement proper error handling and return types for syscalls for errno
+// const MAX_FD: usize = 1024;
 pub const O_CREAT: u64 = 64;
+const MAX_STR_LEN: u64 = 4096;
 
 pub fn read_user_string(ptr: u64, ctx: &impl SyscallContext) -> Result<String, &'static str> {
     if !ctx.is_user_address(ptr) {
@@ -30,7 +33,7 @@ pub fn read_user_string(ptr: u64, ctx: &impl SyscallContext) -> Result<String, &
         }
         s.push(c as char);
         i += 1;
-        if i > 4096 {
+        if i > MAX_STR_LEN {
             return Err("String too long");
         }
     }
@@ -80,6 +83,26 @@ pub fn sys_faccessat(_thread: &Arc<Thread>, _ctx: &impl SyscallContext) -> u64 {
 
 // Core Implementation Layer
 
+fn insert_fd(fd_table: &mut Vec<Option<Arc<File>>>, file: Arc<File>) -> u64 {
+
+    // technically this wastes 3 slots per process, but it simplifies the logic
+    let mut fd = 3;
+
+    if fd_table.len() <= fd {
+        fd_table.resize(fd + 1, None);
+    }
+
+    while fd_table[fd].is_some() {
+        fd += 1;
+        if fd == fd_table.len() {
+            fd_table.push(None);
+        }
+    }
+
+    fd_table[fd] = Some(file);
+    fd as u64
+}
+
 pub fn do_sys_read(
     fd: u64,
     buf_ptr: u64,
@@ -88,7 +111,7 @@ pub fn do_sys_read(
     ctx: &impl SyscallContext,
 ) -> u64 {
     let fd_table = thread.process.get().unwrap().fd_table.lock();
-    if let Some(file) = fd_table.get(&(fd as i32)) {
+    if let Some(file) = fd_table.get(fd as usize).and_then(Option::as_ref) {
         if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
         {
             return -1i64 as u64;
@@ -123,7 +146,7 @@ pub fn do_sys_write(
     }
 
     let fd_table = thread.process.get().unwrap().fd_table.lock();
-    if let Some(file) = fd_table.get(&(fd as i32)) {
+    if let Some(file) = fd_table.get(fd as usize).and_then(Option::as_ref) {
         if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
         {
             return -1i64 as u64;
@@ -166,8 +189,8 @@ pub fn do_sys_openat(
             .unwrap_or_else(|| VFS.get_root().expect("CWD and VFS root not set"))
     } else {
         let fd_table = thread.process.get().unwrap().fd_table.lock();
-        match fd_table.get(&dirfd) {
-            Some(file) => file.vnode.clone(),
+        match fd_table.get(dirfd as usize).and_then(Option::as_ref) {
+            Some(file) => Arc::clone(&file.vnode),
             None => {
                 return -1i64 as u64;
             }
@@ -180,13 +203,7 @@ pub fn do_sys_openat(
     if components.is_empty() {
         let file = Arc::new(File::new(current));
         let mut fd_table = thread.process.get().unwrap().fd_table.lock();
-        let mut fd = 3;
-        // TODO this should really just be an array of option<file> instead of a btree map
-        while fd_table.contains_key(&fd) {
-            fd += 1;
-        }
-        fd_table.insert(fd, file);
-        return fd as u64;
+        return insert_fd(&mut fd_table, file);
     }
 
     for &comp in &components[..components.len() - 1] {
@@ -216,19 +233,16 @@ pub fn do_sys_openat(
 
     let file = Arc::new(File::new(vnode));
     let mut fd_table = thread.process.get().unwrap().fd_table.lock();
-    let mut fd = 3;
-    while fd_table.contains_key(&fd) {
-        fd += 1;
-    }
-    fd_table.insert(fd, file);
-    fd as u64
+    insert_fd(&mut fd_table, file)
 }
 
 pub fn do_sys_close(fd: i32, thread: &Arc<Thread>) -> u64 {
     let mut fd_table = thread.process.get().unwrap().fd_table.lock();
-    if fd_table.remove(&fd).is_some() {
-        0
-    } else {
-        -1i64 as u64
+    if let Some(file) = fd_table.get_mut(fd as usize) {
+        if file.take().is_some() {
+            return 0;
+        }
     }
+
+    -1i64 as u64
 }
