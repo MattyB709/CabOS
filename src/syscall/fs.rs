@@ -239,6 +239,7 @@ pub fn do_sys_openat(
 pub fn do_sys_close(fd: i32, thread: &Arc<Thread>) -> u64 {
     let mut fd_table = thread.process.get().unwrap().fd_table.lock();
     if let Some(file) = fd_table.get_mut(fd as usize) {
+        // TODO should there be an extra clean up step on the final close for a file, or is just dropping it enough?
         if file.take().is_some() {
             return 0;
         }

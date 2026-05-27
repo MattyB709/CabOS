@@ -26,6 +26,11 @@ pub struct Process {
 impl Drop for Process {
     fn drop(&mut self) {
         PID_ALLOCATOR.get().unwrap().lock().free(self.pid);
+        // close all open file descriptors
+        let mut fd_table = self.fd_table.lock();
+        for file in fd_table.iter_mut() {
+            file.take();
+        }
     }
 }
 
@@ -35,6 +40,7 @@ struct PidAllocator {
 }
 
 impl PidAllocator {
+
     fn new() -> Self {
         // +1 so index == pid works for 0..=MAX_PID
         let mut used = bitvec![0; MAX_PID + 1];
@@ -73,13 +79,6 @@ impl PidAllocator {
         assert!(self.used[pid], "double free of PID {}", pid);
         self.used.set(pid, false);
     }
-
-    fn _mark_used(&mut self, pid: u32) {
-        let pid = pid as usize;
-        assert!(pid <= MAX_PID);
-        assert!(!self.used[pid], "PID {} already in use", pid);
-        self.used.set(pid, true);
-    }
 }
 
 pub fn init_pid_allocator() {
@@ -91,6 +90,7 @@ impl Process {
         let pid = PID_ALLOCATOR.get().unwrap().lock().alloc()?;
         Some(Arc::new(Self {
             virtual_memory: VirtualMemory::new(),
+            live_threads: IntMutex::new(Vec::new()),
             exit_code: Promise::new(),
             pid,
             fd_table: IntMutex::new(Vec::new()),
