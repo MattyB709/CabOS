@@ -6,13 +6,24 @@ use crate::{
     thread::{IDLE, Thread, suspend_to_thread},
 };
 
+// syscall implementation for exit. Only sets exit code if it is the last thread in the process,
+// different from the 
 pub fn sys_exit(thread: &Arc<Thread>, ctx: &impl SyscallContext) {
     let process = thread.process.get().unwrap();
-    // TODO remove thread from process's live thread list
-    if process.live_threads.lock().len() == 1 {
-        let exit_code = ctx.arg0() as i32;
-        // TODO implement parent-child relationship for proper waiting and reaping of processes
-        process.exit_code.set(exit_code);
+
+    // set the exit code and mark the process as dead if this is the last thread.
+    let is_last_thread = {
+        let mut live_threads = process.live_threads.lock();
+
+        live_threads.retain(|live| match live.upgrade() {
+            Some(live) => !Thread::is_same_thread(&live, thread),
+            None => false, // prune stale weak refs too
+        });
+
+        live_threads.is_empty()
+    };
+    if is_last_thread {
+        process.exit_code.set(ctx.arg0() as i32);
     }
 
     suspend_to_thread(IDLE.get().unwrap().clone());
