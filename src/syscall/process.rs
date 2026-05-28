@@ -1,8 +1,10 @@
 use alloc::sync::Arc;
 
 use super::SyscallContext;
-use crate::thread::{Thread, suspend_to_thread, IDLE};
-use crate::sync::MutexLike;
+use crate::{
+    sync::MutexLike,
+    thread::{IDLE, Thread, suspend_to_thread},
+};
 
 pub fn sys_exit(thread: &Arc<Thread>, ctx: &impl SyscallContext) {
     let process = thread.process.get().unwrap();
@@ -12,9 +14,9 @@ pub fn sys_exit(thread: &Arc<Thread>, ctx: &impl SyscallContext) {
         // TODO implement parent-child relationship for proper waiting and reaping of processes
         process.exit_code.set(exit_code);
     }
-    
 
     suspend_to_thread(IDLE.get().unwrap().clone());
+    unreachable!();
 }
 
 pub fn sys_getpid(thread: &Arc<Thread>, _ctx: &impl SyscallContext) -> u64 {

@@ -84,7 +84,6 @@ pub fn sys_faccessat(_thread: &Arc<Thread>, _ctx: &impl SyscallContext) -> u64 {
 // Core Implementation Layer
 
 fn insert_fd(fd_table: &mut Vec<Option<Arc<File>>>, file: Arc<File>) -> u64 {
-
     // technically this wastes 3 slots per process, but it simplifies the logic
     let mut fd = 3;
 
@@ -133,11 +132,10 @@ pub fn do_sys_write(
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> u64 {
+    if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1)) {
+        return -1i64 as u64;
+    }
     if fd == 1 || fd == 2 {
-        if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
-        {
-            return -1i64 as u64;
-        }
         let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, count as usize) };
         if let Ok(s) = core::str::from_utf8(buf) {
             kprint!("{}", s);
@@ -147,10 +145,6 @@ pub fn do_sys_write(
 
     let fd_table = thread.process.get().unwrap().fd_table.lock();
     if let Some(file) = fd_table.get(fd as usize).and_then(Option::as_ref) {
-        if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
-        {
-            return -1i64 as u64;
-        }
         let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, count as usize) };
         match file.write(buf) {
             Ok(n) => n as u64,

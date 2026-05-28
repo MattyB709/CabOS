@@ -101,7 +101,7 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
             ctx.set_return_value(sys_unlinkat(thread, ctx));
         }
         number::EXIT => {
-            ctx.set_return_value(sys_exit(thread, ctx));
+            sys_exit(thread, ctx);
         }
         number::GETPID => {
             ctx.set_return_value(sys_getpid(thread, ctx));

@@ -1,4 +1,7 @@
-use alloc::{sync::{Arc, Weak}, vec::Vec};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 extern crate bitvec;
 use bitvec::prelude::{BitVec, bitvec};
 use spin::Once;
@@ -8,7 +11,7 @@ use crate::{
     fs::{file::File, vfs::VNode},
     memory::virtual_memory_2::VirtualMemory,
     sync::{IntMutex, MutexLike, Promise},
-    thread::{Thread, THIS_THREAD, spawn_thread},
+    thread::{THIS_THREAD, Thread, spawn_thread},
 };
 
 static MAX_PID: usize = 65536;
@@ -40,7 +43,6 @@ struct PidAllocator {
 }
 
 impl PidAllocator {
-
     fn new() -> Self {
         // +1 so index == pid works for 0..=MAX_PID
         let mut used = bitvec![0; MAX_PID + 1];
@@ -87,10 +89,14 @@ pub fn init_pid_allocator() {
 
 impl Process {
     pub fn new() -> Option<Arc<Self>> {
+        // unwrap because pid allocator should always be set on kernel boot
         let pid = PID_ALLOCATOR.get().unwrap().lock().alloc()?;
+        let mut live_threads = Vec::new();
+        let this_thread_weak = THIS_THREAD.get()?.clone();
+        live_threads.push(this_thread_weak);
         Some(Arc::new(Self {
             virtual_memory: VirtualMemory::new(),
-            live_threads: IntMutex::new(Vec::new()),
+            live_threads: IntMutex::new(live_threads),
             exit_code: Promise::new(),
             pid,
             fd_table: IntMutex::new(Vec::new()),
