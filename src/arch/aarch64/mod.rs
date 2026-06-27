@@ -1,10 +1,13 @@
 use alloc::{boxed::Box, vec::Vec};
-use core::arch::asm;
+use core::{arch::asm, ptr};
 
 use spin::Once;
 
 use crate::{
-    devices::discovery::DeviceDiscovery, memory::virtual_memory::PagingOptions, print::CharSink,
+    arch::aarch64::vmm::{get_phys_addr, phys_to_virt},
+    devices::discovery::DeviceDiscovery,
+    memory::{physical_memory::frame_alloc, virtual_memory::PagingOptions},
+    print::CharSink,
 };
 
 mod asm;
@@ -20,13 +23,12 @@ use context::save_context;
 pub use exceptions::{dump_core_state, init_exceptions};
 pub use gic::timer_ticks;
 pub use interrupt::*;
-use mp::{
-    get_cpu_local_pointer, get_thread_local_pointer, init_cpu_local_ptr, initialize_core,
-    set_thread_local_pointer,
-};
+use mp::{get_cpu_local_pointer, init_cpu_local_ptr, initialize_core};
 mod vmm;
 
 pub use crate::arch::{ArchTrait, UnwindContextTrait};
+
+const AARCH64_STACK_ALIGNMENT: u64 = 64;
 
 pub struct Arch;
 
@@ -68,13 +70,66 @@ impl ArchTrait for Arch {
     ) {
         panic!("Not implemented");
     }
+    // TODO implement proper auxv handling and envp
+    fn setup_stack(sp: u64, space: u64, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64> {
+        let mut sp = sp;
+        assert!(argv.len() as u64 == argc);
+        assert!(
+            sp % 16 == 0,
+            "Stack pointer must be 16-byte aligned on aarch64"
+        );
+        // write using the kernel virtual address to not deal with user space mappings
+
+        let mut arg_ptrs = Vec::new();
+        let mut env_ptrs = Vec::new();
+
+        // push the arguments onto the stack in reverse order
+        for arg in argv.iter() {
+            let bytes = arg.as_bytes();
+            sp -= (bytes.len() + 1) as u64; // +1 for null terminator
+            copy_to_user(space, sp, bytes).ok()?;
+            copy_to_user(space, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
+            arg_ptrs.push(sp as u64);
+        }
+
+        for env in envp.iter() {
+            let bytes = env.as_bytes();
+            sp -= (bytes.len() + 1) as u64; // +1 for null terminator
+            copy_to_user(space, sp, bytes).ok()?;
+            copy_to_user(space, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
+            env_ptrs.push(sp as u64);
+        }
+
+        let num_words = arg_ptrs.len() + env_ptrs.len() + 5; // 5 for the two null terminators for envp and argv, two words for auxv, and argc
+        sp -= (num_words * 8) as u64; // make space for the pointers and auxv
+        sp &= !(AARCH64_STACK_ALIGNMENT - 1);
+        let mut temp_sp = sp;
+
+        // this should technically be replaced by a copy_u64 for speed, but this is fine for now
+        copy_to_user(space, temp_sp, &argc.to_ne_bytes()).ok()?; // argc
+        temp_sp += 8;
+
+        for ptr in arg_ptrs.iter() {
+            copy_to_user(space, temp_sp, &ptr.to_ne_bytes()).ok()?;
+            temp_sp += 8;
+        }
+        copy_to_user(space, temp_sp, &[0; 8]).ok()?; // NULL terminator for argv
+        temp_sp += 8;
+        for ptr in env_ptrs.iter() {
+            copy_to_user(space, temp_sp, &ptr.to_ne_bytes()).ok()?;
+            temp_sp += 8;
+        }
+        copy_to_user(space, temp_sp, &[0; 8]).ok()?; // NULL terminator for envp
+        temp_sp += 8;
+        copy_to_user(space, temp_sp, &[0; 16]).ok()?; // NULL terminator for auxv
+        return Some(sp as u64);
+    }
 
     fn sleep_core() {
         asm::sleep_core();
     }
 
     // TODO implement this
-    // doesn't really affect correctness just can give a performance boost
     fn wake_other_cores() {}
 
     unsafe fn save_context<T: FnOnce() -> !>(
@@ -93,14 +148,6 @@ impl ArchTrait for Arch {
 
     fn set_cpu_local_pointer(core_id: crate::mp::CoreId) {
         init_cpu_local_ptr(core_id);
-    }
-
-    unsafe fn get_thread_local_pointer() -> u64 {
-        unsafe { get_thread_local_pointer() }
-    }
-
-    unsafe fn set_thread_local_pointer(base: *const u64) {
-        unsafe { set_thread_local_pointer(base) };
     }
 
     fn read_cycle_counter() -> u64 {
@@ -197,4 +244,39 @@ impl UnwindContextTrait for UnwindContext {
             ptr: fp as *const u64,
         }
     }
+}
+
+fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), ()> {
+    while !bytes.is_empty() {
+        ensure_user_page(space, dst)?;
+        let kva = phys_to_virt(get_phys_addr(dst, space).ok_or(())?);
+        let page_left = Arch::PAGE_SIZE - (dst as usize % Arch::PAGE_SIZE);
+        let bytes_left = bytes.len();
+        let to_copy = core::cmp::min(page_left, bytes_left);
+        unsafe {
+            ptr::copy_nonoverlapping(bytes.as_ptr(), kva as usize as *mut u8, to_copy);
+        }
+        dst += to_copy as u64;
+        bytes = &bytes[to_copy..];
+    }
+    Ok(())
+}
+
+// TODO we'll need some pinning system so after we ensure a page is present it doesn't get swapped out, but this will come with swap implementation
+fn ensure_user_page(space: u64, vaddr: u64) -> Result<(), ()> {
+    if get_phys_addr(vaddr, space).is_some() {
+        return Ok(());
+    }
+
+    let frame = frame_alloc();
+    Arch::virtual_map(
+        space,
+        vaddr & !(Arch::PAGE_SIZE as u64 - 1),
+        frame as u64,
+        PagingOptions::PRESENT
+            | PagingOptions::WRITABLE
+            | PagingOptions::CACHEABLE
+            | PagingOptions::USER_ACCESSIBLE,
+    );
+    Ok(())
 }

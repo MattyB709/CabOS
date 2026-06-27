@@ -100,15 +100,6 @@ pub trait ArchTrait {
     );
     fn set_cpu_local_pointer(core_id: CoreId);
     fn get_cpu_local_pointer() -> u64;
-
-    /// # Safety
-    /// Internal, do not call outside of thread module.
-    unsafe fn set_thread_local_pointer(base: *const u64);
-
-    /// # Safety
-    /// Internal, do not call outside of thread module.
-    unsafe fn get_thread_local_pointer() -> u64;
-
     fn read_cycle_counter() -> u64;
     const PAGE_SIZE: usize;
     fn get_kernel_address_space() -> u64;
@@ -126,6 +117,9 @@ pub trait ArchTrait {
     fn create_arch_specific_drivers(
         system_drivers: &mut Vec<Box<dyn DeviceDiscovery + Send + Sync>>,
     );
+
+    // sets up the initial stack for a user process and returns the initial stack pointer. Space is the address space the stack should be mapped in
+    fn setup_stack(sp: u64, space: u64, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64>;
 
     fn init_tty(cell: &Once<Box<dyn CharSink>>);
 }

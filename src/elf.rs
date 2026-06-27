@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use crate::{Arch, ArchTrait, fs::vfs::VNode, process::Process};
+use crate::{Arch, ArchTrait, fs::vfs::VNode, print::kprintln, process::Process};
 
 mod eh_constants {
     pub const EI_MAG: [u8; 4] = [0x7f, b'E', b'L', b'F'];
@@ -27,6 +27,8 @@ mod eh_constants {
 mod ph_constants {
     pub const PT_LOAD: u32 = 1;
     pub const PT_NOTE: u32 = 4;
+    pub const PT_TLS: u32 = 7;
+    pub const PT_GNU_EH_FRAME: u32 = 0x6474e550;
     pub const PT_GNU_STACK: u32 = 0x6474e551;
     pub const PT_GNU_RELRO: u32 = 0x6474e552;
     pub const PT_GNU_PROPERTY: u32 = 0x6474e553;
@@ -242,20 +244,33 @@ impl ElfLoader {
                     let vaddr = ph.p_vaddr as usize;
                     let offset = ph.p_offset as usize;
 
+                    // in reality the check here needs to be that they have the same offset relative to p_align,
+                    // but for simplicity we just need them to be page aligned so we can map their offsets correctly
+                    if vaddr % Arch::PAGE_SIZE != offset % Arch::PAGE_SIZE {
+                        return Err(ElfError::EHInvalidProgramHeader);
+                    }
+
                     if memsz < filesz {
                         return Err(ElfError::PHInvalidMemSize);
                     }
+                    let vaddr_rounded = vaddr & !(Arch::PAGE_SIZE - 1);
+                    let offset_rounded = offset & !(Arch::PAGE_SIZE - 1);
+                    let padding = offset - offset_rounded;
+                    let map_size = memsz + padding;
 
                     vm.mmap(
-                        Some((inode_key, offset, Some(filesz))),
-                        (memsz + Arch::PAGE_SIZE - 1) & !(Arch::PAGE_SIZE - 1), // Round up.
+                        Some((inode_key, offset_rounded, Some(filesz))),
+                        map_size.div_ceil(Arch::PAGE_SIZE) * Arch::PAGE_SIZE, // Round up.
                         false,
-                        Some(vaddr),
+                        Some(vaddr_rounded),
                     )
                     .map_err(|_| ElfError::MmapError)?;
                 }
                 ph_constants::PT_NOTE => {
                     // Parse notes if needed later.
+                }
+                ph_constants::PT_GNU_EH_FRAME => {
+                    // Unwind metadata emitted by modern toolchains.
                 }
                 ph_constants::PT_GNU_STACK => {
                     // TODO: handle stack permissions. Save this somewhere probably.
@@ -269,10 +284,11 @@ impl ElfLoader {
                     // TODO: handle other GNU properties.
                     // Stuff about CPU/ABI/security or something.
                 }
+                ph_constants::PT_TLS => {}
                 _ => {
                     // TODO: handle other types. Ignore for now. Uncomment for type.
-                    // let segment_type = ph.p_type;
-                    // kprintln!("Unsupported segment type: {}", segment_type);
+                    let segment_type = ph.p_type;
+                    kprintln!("Unsupported segment type: {}", segment_type);
                     return Err(ElfError::PHUnsupportedType);
                 }
             }

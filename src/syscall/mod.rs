@@ -11,7 +11,7 @@ pub use numbers::{number, wrapper_constants::*};
 #[cfg(target_arch = "x86_64")]
 use self::legacy::*;
 use self::{fs::*, net::*, process::*};
-use crate::thread::Thread;
+use crate::{thread::Thread, print::kprintln};
 
 // SyscallContext Trait
 // The purpose of this trait is to unify system calls between
@@ -61,6 +61,7 @@ pub trait SyscallContext {
 
 pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
     let num = ctx.syscall_number();
+    kprintln!("handling syscall {} for thread {}", num, thread.tid());
 
     match num {
         // Modern core ABI (Aarch64 uses these exclusively while x86_64 uses both because of legacy support)

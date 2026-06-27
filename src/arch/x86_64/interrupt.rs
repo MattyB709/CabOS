@@ -17,6 +17,7 @@ use crate::{
     memory::virtual_memory::PageFaultConditions,
     mp::CORE_ID,
     sync::{IntMutex, MutexLike},
+    thread::CUR_TLS_ADDR,
 };
 
 static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
@@ -154,7 +155,7 @@ unsafe extern "C" fn irq_handler_t1(addr: *mut InterruptContext) {
         //reset FS
         let cur_thread = crate::thread::CURRENT_THREAD.take();
         if let Some(thread) = &cur_thread {
-            unsafe { super::set_thread_local_pointer(&thread.tls_addr) };
+            CUR_TLS_ADDR.set(thread.tls_addr);
         }
         crate::thread::CURRENT_THREAD.set(cur_thread);
     }

@@ -30,10 +30,7 @@ pub use context::Context;
 use context::save_context;
 pub use interrupt::*;
 pub use irq_vector::IPI_WAKE;
-use mp::{
-    get_cpu_local_pointer, get_thread_local_pointer, init_cpu_local_ptr, initialize_core,
-    set_thread_local_pointer,
-};
+use mp::{get_cpu_local_pointer, init_cpu_local_ptr, initialize_core};
 pub use vmm::*;
 use x86::{
     bits64::rflags::{self, RFlags},
@@ -118,14 +115,6 @@ impl ArchTrait for Arch {
         init_cpu_local_ptr(core_id);
     }
 
-    unsafe fn get_thread_local_pointer() -> u64 {
-        unsafe { get_thread_local_pointer() }
-    }
-
-    unsafe fn set_thread_local_pointer(base: *const u64) {
-        unsafe { set_thread_local_pointer(base) };
-    }
-
     fn read_cycle_counter() -> u64 {
         read_tsc()
     }
@@ -140,6 +129,16 @@ impl ArchTrait for Arch {
 
     fn get_user_address_space() -> u64 {
         get_address_space()
+    }
+
+    fn setup_stack(
+        _sp: u64,
+        _space: u64,
+        _argc: u64,
+        _argv: &[&str],
+        _envp: &[&str],
+    ) -> Option<u64> {
+        unimplemented!("setup_stack is not implemented for x86_64 yet");
     }
 
     fn set_user_address_space(space: u64) {
