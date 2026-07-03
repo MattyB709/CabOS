@@ -224,6 +224,8 @@ pub fn do_sys_openat(
     fd as u64
 }
 
+// we don't call close on the File here because it should simply be dropped when the Arc goes out of scope,
+// but it's possible some filesystems may need their own close method, worth checking.
 pub fn do_sys_close(fd: i32, thread: &Arc<Thread>) -> u64 {
     let mut fd_table = thread.process.get().unwrap().fd_table.lock();
     if fd_table.remove(&fd).is_some() {

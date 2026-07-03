@@ -14,6 +14,7 @@ pub mod number {
     pub const CLONE: u64 = 220;
     pub const EXIT: u64 = 93;
     pub const GETPID: u64 = 172;
+    pub const MMAP: u64 = 222;
 }
 
 #[cfg(target_arch = "x86_64")]

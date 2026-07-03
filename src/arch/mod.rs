@@ -105,6 +105,7 @@ pub trait ArchTrait {
     fn get_kernel_address_space() -> u64;
     fn get_user_address_space() -> u64;
     fn set_user_address_space(space: u64);
+    fn get_phys_addr(vaddr: u64, space: u64) -> Option<u64>;
     fn configure_vm();
     fn virtual_map(space: u64, vaddr: u64, paddr: u64, options: PagingOptions);
     fn virtual_unmap(space: u64, vaddr: u64) -> Option<u64>;

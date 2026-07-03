@@ -4,9 +4,8 @@ use core::{arch::asm, ptr};
 use spin::Once;
 
 use crate::{
-    arch::aarch64::vmm::{get_phys_addr, phys_to_virt},
     devices::discovery::DeviceDiscovery,
-    memory::{physical_memory::frame_alloc, virtual_memory::PagingOptions},
+    memory::{physical_memory::frame_alloc, virtual_memory::{PagingOptions, phys_to_virt}},
     print::CharSink,
 };
 
@@ -61,6 +60,10 @@ impl ArchTrait for Arch {
 
     fn irq_is_enabled() -> bool {
         irq_is_enabled()
+    }
+
+    fn get_phys_addr(vaddr: u64, space: u64) -> Option<u64> {
+        vmm::get_phys_addr(vaddr, space)
     }
 
     fn register_irq_handler(
@@ -249,7 +252,7 @@ impl UnwindContextTrait for UnwindContext {
 fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), ()> {
     while !bytes.is_empty() {
         ensure_user_page(space, dst)?;
-        let kva = phys_to_virt(get_phys_addr(dst, space).ok_or(())?);
+        let kva = phys_to_virt(Arch::get_phys_addr(dst, space).ok_or(())?);
         let page_left = Arch::PAGE_SIZE - (dst as usize % Arch::PAGE_SIZE);
         let bytes_left = bytes.len();
         let to_copy = core::cmp::min(page_left, bytes_left);
@@ -263,8 +266,9 @@ fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), ()> {
 }
 
 // TODO we'll need some pinning system so after we ensure a page is present it doesn't get swapped out, but this will come with swap implementation
+// TODO also this should guaranteed to be registered with mmap, in our use case it is but worth the check
 fn ensure_user_page(space: u64, vaddr: u64) -> Result<(), ()> {
-    if get_phys_addr(vaddr, space).is_some() {
+    if Arch::get_phys_addr(vaddr, space).is_some() {
         return Ok(());
     }
 

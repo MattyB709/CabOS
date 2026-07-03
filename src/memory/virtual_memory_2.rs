@@ -1,5 +1,8 @@
 use alloc::boxed::Box;
+use crate::process::Process;
+use alloc::sync::Arc;
 
+use bitflags::bitflags;
 use intrusive_collections::{Bound, KeyAdapter, RBTree, RBTreeLink, intrusive_adapter};
 use spin::Once;
 
@@ -12,6 +15,7 @@ use crate::{
         physical_memory,
         virtual_memory::{PageFaultConditions, PagingOptions},
     },
+    print::kprintln,
     sync::{IntMutex, MutexLike},
 };
 pub const USERSPACE_START: usize = 0x10000;
@@ -26,6 +30,25 @@ struct Mapping {
     shared: bool,
     base: usize,
     link: RBTreeLink,
+}
+
+bitflags! {
+    struct ProtectionFlags: u32 {
+        const NONE = 0;
+        const READ = 0b0001;
+        const WRITE = 0b0010;
+        const EXECUTE = 0b0100;
+    }
+}
+
+bitflags! {
+    struct MappingFlags: u32 {
+        const NONE = 0;
+        const MAP_SHARED = 0b0001;
+        const MAP_PRIVATE = 0b0010;
+        const MAP_FIXED = 0b10000;
+        const MAP_ANONYMOUS = 0b100000;
+    }
 }
 
 intrusive_adapter!(MappingAdapter = Box<Mapping>: Mapping { link => RBTreeLink });
@@ -47,6 +70,63 @@ impl VirtualMemory {
         let limine_page_table =
             LIMINE_PAGE_TABLE.call_once(|| Arch::get_user_address_space() as usize);
         assert!(limine_page_table.is_multiple_of(Arch::PAGE_SIZE));
+    }
+
+    // linux mmap syscall
+    // TODO handle permissions, right now we just map everything as read/write/execute
+    pub fn sys_mmap(
+        &self,
+        process: &Arc<Process>,
+        addr: u64,
+        length: u64,
+        _prot: u32,
+        flags: u32,
+        fd: i32,
+        offset: u64,
+    ) -> u64 {
+        let inode_key = if fd == -1 {
+            None
+        } else {
+            let file = process.get_file(fd);
+            if file.is_none() {return 0}
+            let file = file.unwrap();
+            let key = match file
+                .vnode
+                .get_inode_key() {
+                    Ok(key) => key,
+                    Err(error) => {
+                        kprintln!("{:?}", error);
+                        return 0;
+                    }
+                };
+            Some(key)
+        };
+
+        let mmap_file = if let Some(inode_key) = inode_key {
+            Some((inode_key, offset as usize, None))
+        } else {
+            None
+        };
+
+        let shared = flags & MappingFlags::MAP_SHARED.bits() != 0;
+        if shared {
+            kprintln!("WARNING: shared mapping not fully handled");
+        }
+        
+        let addr = if flags & MappingFlags::MAP_FIXED.bits() != 0 && addr != 0 {
+            Some(addr as usize)
+        } else {
+            None
+        };
+
+        let result = self.mmap(mmap_file, length as usize, shared, addr);
+        return match result {
+            Ok(return_addr) => return_addr as u64,
+            Err(message) => {
+                kprintln!("{}", message);
+                0
+            }
+        };
     }
 
     pub fn mmap(
@@ -75,6 +155,7 @@ impl VirtualMemory {
                 return Err("file length is bigger than length of map");
             }
         }
+
         let base: usize;
         let mut free_set = self.free_set.lock();
         if let Some(preferred_base) = preferred_base {
@@ -83,6 +164,7 @@ impl VirtualMemory {
         } else {
             base = free_set.remove_range_by_length(length)?;
         }
+
         if file.is_none() {
             file = Some((create_fake_file()?, 0, None));
         }

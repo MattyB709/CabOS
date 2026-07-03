@@ -75,10 +75,6 @@ pub fn get_phys_addr(vaddr: u64, space: u64) -> Option<u64> {
     }
 }
 
-pub fn phys_to_virt(paddr: u64) -> u64 {
-    paddr + HHDM_REQUEST.get_response().unwrap().offset()
-}
-
 // TODO allow for shared mappings and write-through caching
 bitflags! {
     pub struct PageTableEntryFlags: u64 {

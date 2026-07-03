@@ -193,6 +193,11 @@ pub fn handle_page_fault(cause: PageFaultConditions, address: usize, thread: &Ar
     }
 }
 
+//  returns kernel virtual address for a given physical address, assuming it is mapped
+pub fn phys_to_virt(paddr: u64) -> u64 {
+    paddr + *HHDM_OFFSET.get().expect("HHDM_OFFSET not set") as u64
+}
+
 pub struct VirtualMemoryAllocation {
     pub space: u64,
     pub base: usize,

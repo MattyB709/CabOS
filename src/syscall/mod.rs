@@ -11,7 +11,7 @@ pub use numbers::{number, wrapper_constants::*};
 #[cfg(target_arch = "x86_64")]
 use self::legacy::*;
 use self::{fs::*, net::*, process::*};
-use crate::{thread::Thread, print::kprintln};
+use crate::{print::kprintln, thread::Thread};
 
 // SyscallContext Trait
 // The purpose of this trait is to unify system calls between
@@ -106,6 +106,19 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
         }
         number::GETPID => {
             ctx.set_return_value(sys_getpid(thread, ctx));
+        }
+        number::MMAP => {
+            let proc = thread.process.get().unwrap();
+            let addr = proc.virtual_memory.sys_mmap(
+                proc,
+                ctx.arg0(),
+                ctx.arg1(),
+                ctx.arg2() as u32,
+                ctx.arg3() as u32,
+                ctx.arg4() as i32,
+                ctx.arg5(),
+            );
+            ctx.set_return_value(addr);
         }
 
         // x86_64 libraries will use these legacy system calls which ARM does not support any more

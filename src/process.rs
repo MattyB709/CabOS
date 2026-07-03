@@ -66,13 +66,6 @@ impl PidAllocator {
         assert!(self.used[pid], "double free of PID {}", pid);
         self.used.set(pid, false);
     }
-
-    fn _mark_used(&mut self, pid: u32) {
-        let pid = pid as usize;
-        assert!(pid <= MAX_PID);
-        assert!(!self.used[pid], "PID {} already in use", pid);
-        self.used.set(pid, true);
-    }
 }
 
 pub fn init_pid_allocator() {
@@ -106,6 +99,15 @@ impl Process {
 
     pub fn get_address_space(&self) -> u64 {
         self.virtual_memory.get_page_table() as u64
+    }
+
+    // get a reference to a file, not an actual handle for ownership
+    pub fn get_file(&self, fd: i32) -> Option<Arc<File>> {
+        let fd_table = self.fd_table.lock();
+        match fd_table.get(&fd) {
+            Some(file) => Some(file.clone()),
+            None => None
+        }
     }
 }
 
