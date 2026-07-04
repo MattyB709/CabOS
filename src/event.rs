@@ -8,9 +8,8 @@ use crate::{
     arch::{Arch, ArchTrait},
     memory::virtual_memory::{PageFaultConditions, handle_page_fault},
     mp::{CORE_ID, CoreId, core_local},
-    print::kprintln,
     sync::{IntSpinLock, MutexLike},
-    syscall::syscall_handler,
+    syscall::{syscall_handler, numbers::number},
     thread::{
         CONTEXT, CORE_PINNED_TO, CUR_EVENT, LOCAL_WORK_QUEUE, PINNED_TO_CORE, Thread, ThreadQueue,
         make_thread, new_thread_queue, schedule_thread, this_thread, yield_thread,
@@ -85,20 +84,27 @@ pub fn init_event_handler() {
                 let event = CUR_EVENT.read_for(&thread).lock().take().unwrap();
                 match event {
                     PageFault { cause, address } => {
-                        kprintln!(
-                            "handling page fault for thread {} at address {:#x}",
-                            thread.tid(),
-                            address
-                        );
+                        // kprintln!(
+                        //     "handling page fault for thread {} at address {:#x}",
+                        //     thread.tid(),
+                        //     address
+                        // );
                         handle_page_fault(cause, address, &thread);
                         schedule_thread(thread);
                     }
                     Syscall => {
                         // Handle syscall event
                         let mut context = CONTEXT.read_for(&thread).lock();
-                        syscall_handler(&thread, &mut *context);
+                        let num = syscall_handler(&thread, &mut *context);
                         drop(context);
 
+                        match num {
+                            number::EXIT => {
+                                // If the syscall was exit, we don't want to reschedule the thread
+                                continue;
+                            }
+                            _ => {}
+                        }
                         schedule_thread(thread);
                     }
                     Shootdown { .. } => {

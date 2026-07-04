@@ -59,7 +59,7 @@ pub trait SyscallContext {
     }
 }
 
-pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
+pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u64{
     let num = ctx.syscall_number();
     kprintln!("handling syscall {}, {} for thread {}", num, syscall_name(num), thread.tid());
 
@@ -176,4 +176,5 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
 
         _ => panic!("SYSCALL {} UNIMPLEMENTED", num),
     }
+    num
 }
