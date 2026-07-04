@@ -9,7 +9,7 @@ use crate::{
     memory::virtual_memory::{PageFaultConditions, handle_page_fault},
     mp::{CORE_ID, CoreId, core_local},
     sync::{IntSpinLock, MutexLike},
-    syscall::{syscall_handler, numbers::number},
+    syscall::{numbers::number, syscall_handler},
     thread::{
         CONTEXT, CORE_PINNED_TO, CUR_EVENT, LOCAL_WORK_QUEUE, PINNED_TO_CORE, Thread, ThreadQueue,
         make_thread, new_thread_queue, schedule_thread, this_thread, yield_thread,
@@ -98,12 +98,9 @@ pub fn init_event_handler() {
                         let num = syscall_handler(&thread, &mut *context);
                         drop(context);
 
-                        match num {
-                            number::EXIT => {
-                                // If the syscall was exit, we don't want to reschedule the thread
-                                continue;
-                            }
-                            _ => {}
+                        if num == number::EXIT {
+                            // If the syscall was exit, we don't want to reschedule the thread
+                            continue;
                         }
                         schedule_thread(thread);
                     }

@@ -1,13 +1,11 @@
 use alloc::{boxed::Box, vec::Vec};
-use core::{arch::asm};
+use core::arch::asm;
 
 use spin::Once;
 
 use crate::{
     devices::discovery::DeviceDiscovery,
-    memory::{
-        virtual_memory::{PagingOptions, copy_to_user},
-    },
+    memory::virtual_memory::{PagingOptions, copy_to_user},
     print::CharSink,
 };
 

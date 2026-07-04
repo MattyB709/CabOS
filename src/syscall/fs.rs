@@ -72,7 +72,12 @@ pub fn sys_close(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
 }
 
 pub fn sys_lseek(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
-    do_sys_lseek(ctx.arg0() as i32, ctx.arg1() as i64, ctx.arg2() as i32, thread)
+    do_sys_lseek(
+        ctx.arg0() as i32,
+        ctx.arg1() as i64,
+        ctx.arg2() as i32,
+        thread,
+    )
 }
 
 pub fn sys_mkdirat(_thread: &Arc<Thread>, _ctx: &impl SyscallContext) -> u64 {

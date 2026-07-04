@@ -59,9 +59,14 @@ pub trait SyscallContext {
     }
 }
 
-pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u64{
+pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u64 {
     let num = ctx.syscall_number();
-    kprintln!("handling syscall {}, {} for thread {}", num, syscall_name(num), thread.tid());
+    kprintln!(
+        "handling syscall {}, {} for thread {}",
+        num,
+        syscall_name(num),
+        thread.tid()
+    );
 
     match num {
         // Modern core ABI (Aarch64 uses these exclusively while x86_64 uses both because of legacy support)
