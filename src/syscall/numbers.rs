@@ -35,6 +35,7 @@ pub mod number {
     pub const MKDIR: u64 = 83;
     pub const RMDIR: u64 = 84;
     pub const UNLINK: u64 = 87;
+    pub const MMAP: u64 = 9;
 
     pub const OPENAT: u64 = 257;
     pub const MKDIRAT: u64 = 258;

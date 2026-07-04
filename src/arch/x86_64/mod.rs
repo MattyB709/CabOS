@@ -123,7 +123,7 @@ impl ArchTrait for Arch {
 
     fn configure_vm() {}
 
-    fn get_phys_addr(vaddr: u64, space: u64) -> Option<u64> {
+    fn get_phys_addr(_vaddr: u64, _space: u64) -> Option<u64> {
         unimplemented!("get_phys_addr is not implemented for x86_64 yet");
     }
 

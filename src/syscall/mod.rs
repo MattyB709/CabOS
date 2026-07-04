@@ -109,8 +109,7 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
         }
         number::MMAP => {
             let proc = thread.process.get().unwrap();
-            let addr = proc.virtual_memory.sys_mmap(
-                proc,
+            let addr = proc.sys_mmap(
                 ctx.arg0(),
                 ctx.arg1(),
                 ctx.arg2() as u32,

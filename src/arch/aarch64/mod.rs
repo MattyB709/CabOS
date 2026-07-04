@@ -5,7 +5,10 @@ use spin::Once;
 
 use crate::{
     devices::discovery::DeviceDiscovery,
-    memory::{physical_memory::frame_alloc, virtual_memory::{PagingOptions, phys_to_virt}},
+    memory::{
+        physical_memory::frame_alloc,
+        virtual_memory::{PagingOptions, copy_to_user, phys_to_virt},
+    },
     print::CharSink,
 };
 
@@ -247,40 +250,4 @@ impl UnwindContextTrait for UnwindContext {
             ptr: fp as *const u64,
         }
     }
-}
-
-fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), ()> {
-    while !bytes.is_empty() {
-        ensure_user_page(space, dst)?;
-        let kva = phys_to_virt(Arch::get_phys_addr(dst, space).ok_or(())?);
-        let page_left = Arch::PAGE_SIZE - (dst as usize % Arch::PAGE_SIZE);
-        let bytes_left = bytes.len();
-        let to_copy = core::cmp::min(page_left, bytes_left);
-        unsafe {
-            ptr::copy_nonoverlapping(bytes.as_ptr(), kva as usize as *mut u8, to_copy);
-        }
-        dst += to_copy as u64;
-        bytes = &bytes[to_copy..];
-    }
-    Ok(())
-}
-
-// TODO we'll need some pinning system so after we ensure a page is present it doesn't get swapped out, but this will come with swap implementation
-// TODO also this should guaranteed to be registered with mmap, in our use case it is but worth the check
-fn ensure_user_page(space: u64, vaddr: u64) -> Result<(), ()> {
-    if Arch::get_phys_addr(vaddr, space).is_some() {
-        return Ok(());
-    }
-
-    let frame = frame_alloc();
-    Arch::virtual_map(
-        space,
-        vaddr & !(Arch::PAGE_SIZE as u64 - 1),
-        frame as u64,
-        PagingOptions::PRESENT
-            | PagingOptions::WRITABLE
-            | PagingOptions::CACHEABLE
-            | PagingOptions::USER_ACCESSIBLE,
-    );
-    Ok(())
 }

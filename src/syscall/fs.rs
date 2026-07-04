@@ -1,4 +1,4 @@
-use alloc::{string::String, sync::Arc, vec::Vec};
+use alloc::{string::String, sync::Arc, vec, vec::Vec};
 
 use super::{AT_FDCWD, SyscallContext};
 use crate::{
@@ -6,6 +6,7 @@ use crate::{
         file::File,
         vfs::{FsError, INodeType, VFS},
     },
+    memory::virtual_memory::copy_from_user,
     print::kprint,
     sync::MutexLike,
     thread::Thread,
@@ -13,6 +14,7 @@ use crate::{
 
 pub const O_CREAT: u64 = 64;
 
+// TODO fix this to use proper user copying
 pub fn read_user_string(ptr: u64, ctx: &impl SyscallContext) -> Result<String, &'static str> {
     if !ctx.is_user_address(ptr) {
         return Err("Invalid address");
@@ -110,13 +112,22 @@ pub fn do_sys_write(
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> u64 {
+    let mut buf = vec![0u8; count as usize];
+    let result = copy_from_user(
+        thread.process.get().unwrap().get_address_space(),
+        buf_ptr,
+        &mut buf,
+    );
+    if result.is_err() {
+        return -1i64 as u64;
+    }
     if fd == 1 || fd == 2 {
         if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
         {
             return -1i64 as u64;
         }
-        let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, count as usize) };
-        if let Ok(s) = core::str::from_utf8(buf) {
+
+        if let Ok(s) = core::str::from_utf8(&buf) {
             kprint!("{}", s);
             return count;
         }
@@ -128,8 +139,7 @@ pub fn do_sys_write(
         {
             return -1i64 as u64;
         }
-        let buf = unsafe { core::slice::from_raw_parts(buf_ptr as *const u8, count as usize) };
-        match file.write(buf) {
+        match file.write(&buf) {
             Ok(n) => n as u64,
             Err(_) => -1i64 as u64,
         }

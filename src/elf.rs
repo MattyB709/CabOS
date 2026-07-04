@@ -259,7 +259,7 @@ impl ElfLoader {
                     let map_size = memsz + padding;
 
                     vm.mmap(
-                        Some((inode_key, offset_rounded, Some(filesz))),
+                        Some((inode_key, offset_rounded, Some(filesz + padding))),
                         map_size.div_ceil(Arch::PAGE_SIZE) * Arch::PAGE_SIZE, // Round up.
                         false,
                         Some(vaddr_rounded),

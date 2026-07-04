@@ -1,4 +1,5 @@
 use alloc::{boxed::Box, sync::Arc};
+use core::ptr;
 
 use bitflags::bitflags;
 use intrusive_collections::{Bound, KeyAdapter, RBTree, RBTreeLink, intrusive_adapter};
@@ -196,6 +197,65 @@ pub fn handle_page_fault(cause: PageFaultConditions, address: usize, thread: &Ar
 //  returns kernel virtual address for a given physical address, assuming it is mapped
 pub fn phys_to_virt(paddr: u64) -> u64 {
     paddr + *HHDM_OFFSET.get().expect("HHDM_OFFSET not set") as u64
+}
+
+pub fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), &str> {
+    while !bytes.is_empty() {
+        ensure_user_page(space, dst)?;
+        let kva =
+            phys_to_virt(Arch::get_phys_addr(dst, space).ok_or("Failed to get physical address")?);
+        let page_left = Arch::PAGE_SIZE - (dst as usize % Arch::PAGE_SIZE);
+        let bytes_left = bytes.len();
+        let to_copy = core::cmp::min(page_left, bytes_left);
+        unsafe {
+            ptr::copy_nonoverlapping(bytes.as_ptr(), kva as usize as *mut u8, to_copy);
+        }
+        dst += to_copy as u64;
+        bytes = &bytes[to_copy..];
+    }
+    Ok(())
+}
+
+pub fn copy_from_user(space: u64, mut src: u64, mut bytes: &mut [u8]) -> Result<(), &str> {
+    while !bytes.is_empty() {
+        let kva =
+            phys_to_virt(Arch::get_phys_addr(src, space).ok_or("Failed to get physical address")?);
+        let page_left = Arch::PAGE_SIZE - (src as usize % Arch::PAGE_SIZE);
+        let bytes_left = bytes.len();
+        let to_copy = core::cmp::min(page_left, bytes_left);
+        let (head, rest) = bytes.split_at_mut(to_copy);
+        unsafe {
+            ptr::copy_nonoverlapping(kva as usize as *const u8, head.as_mut_ptr(), to_copy);
+        }
+        src += to_copy as u64;
+        bytes = rest;
+    }
+    Ok(())
+}
+
+// TODO we'll need some pinning system so after we ensure a page is present it doesn't get swapped out, but this will come with swap implementation
+// TODO also this should guaranteed to be registered with mmap, in our use case it is but worth the check
+fn ensure_user_page(space: u64, vaddr: u64) -> Result<(), &'static str> {
+    if Arch::get_phys_addr(vaddr, space).is_some() {
+        return Ok(());
+    }
+
+    let frame = frame_alloc();
+    Arch::virtual_map(
+        space,
+        vaddr & !(Arch::PAGE_SIZE as u64 - 1),
+        frame as u64,
+        PagingOptions::PRESENT
+            | PagingOptions::WRITABLE
+            | PagingOptions::CACHEABLE
+            | PagingOptions::USER_ACCESSIBLE,
+    );
+
+    if Arch::get_phys_addr(vaddr, space).is_some() {
+        Ok(())
+    } else {
+        Err("failed to map user page")
+    }
 }
 
 pub struct VirtualMemoryAllocation {
