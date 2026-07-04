@@ -13,6 +13,13 @@ use crate::{
 };
 
 pub const O_CREAT: u64 = 64;
+const EBADF: i32 = 9;
+const EINVAL: i32 = 22;
+const ESPIPE: i32 = 29;
+
+fn errno(code: i32) -> u64 {
+    (-(code as i64)) as u64
+}
 
 // TODO fix this to use proper user copying
 pub fn read_user_string(ptr: u64, ctx: &impl SyscallContext) -> Result<String, &'static str> {
@@ -62,6 +69,10 @@ pub fn sys_openat(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
 
 pub fn sys_close(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
     do_sys_close(ctx.arg0() as i32, thread)
+}
+
+pub fn sys_lseek(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
+    do_sys_lseek(ctx.arg0() as i32, ctx.arg1() as i64, ctx.arg2() as i32, thread)
 }
 
 pub fn sys_mkdirat(_thread: &Arc<Thread>, _ctx: &impl SyscallContext) -> u64 {
@@ -242,5 +253,25 @@ pub fn do_sys_close(fd: i32, thread: &Arc<Thread>) -> u64 {
         0
     } else {
         -1i64 as u64
+    }
+}
+
+pub fn do_sys_lseek(fd: i32, offset: i64, whence: i32, thread: &Arc<Thread>) -> u64 {
+    if fd == 1 || fd == 2 {
+        return errno(ESPIPE);
+    }
+
+    let file = {
+        let fd_table = thread.process.get().unwrap().fd_table.lock();
+        let Some(file) = fd_table.get(&fd) else {
+            return errno(EBADF);
+        };
+        Arc::clone(file)
+    };
+
+    match file.seek(offset, whence) {
+        Ok(new_offset) => new_offset as u64,
+        Err(FsError::InvalidInput | FsError::InvalidOperation) => errno(EINVAL),
+        Err(_) => errno(EINVAL),
     }
 }

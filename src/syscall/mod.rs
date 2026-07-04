@@ -6,7 +6,7 @@ pub mod process;
 
 use alloc::sync::Arc;
 
-pub use numbers::{number, wrapper_constants::*};
+pub use numbers::{number, syscall_name, wrapper_constants::*};
 
 #[cfg(target_arch = "x86_64")]
 use self::legacy::*;
@@ -61,7 +61,7 @@ pub trait SyscallContext {
 
 pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
     let num = ctx.syscall_number();
-    kprintln!("handling syscall {} for thread {}", num, thread.tid());
+    kprintln!("handling syscall {}, {} for thread {}", num, syscall_name(num), thread.tid());
 
     match num {
         // Modern core ABI (Aarch64 uses these exclusively while x86_64 uses both because of legacy support)
@@ -76,6 +76,9 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) {
         }
         number::CLOSE => {
             ctx.set_return_value(sys_close(thread, ctx));
+        }
+        number::LSEEK => {
+            ctx.set_return_value(sys_lseek(thread, ctx));
         }
         number::CLONE => {
             ctx.set_return_value(sys_clone(thread, ctx));

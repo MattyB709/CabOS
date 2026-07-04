@@ -141,6 +141,13 @@ kernel_common::integration_test!({
         assert_eq!(read_eof, 0);
         kprintln!("6. read past EOF returned 0");
 
+        let seek_to_start = call_syscall(&thread, number::LSEEK, fd2, 0, 0, 0);
+        assert_eq!(seek_to_start, 0);
+
+        let seek_to_end = call_syscall(&thread, number::LSEEK, fd2, 0, 2, 0);
+        assert_eq!(seek_to_end, data.len() as u64);
+        kprintln!("7. lseek on regular file passed");
+
         call_syscall(&thread, number::CLOSE, fd2, 0, 0, 0);
 
         // 3. Test opening existing file from image
@@ -183,6 +190,10 @@ kernel_common::integration_test!({
         assert!(fd_dir >= 3);
         kprintln!("8. open directory passed, fd: {}", fd_dir);
 
+        let seek_dir = call_syscall(&thread, number::LSEEK, fd_dir, 0, 0, 0);
+        assert_eq!(seek_dir as i64, -22);
+        kprintln!("9. lseek on directory failed with EINVAL as expected");
+
         let nested_path = "nested.txt\0";
         let fd_nested = call_syscall(
             &thread,
@@ -204,7 +215,7 @@ kernel_common::integration_test!({
         );
         assert!(nested_read > 0);
         kprintln!(
-            "9. openat relative to dir fd passed: {}",
+            "10. openat relative to dir fd passed: {}",
             core::str::from_utf8(&nested_buf[..nested_read as usize]).unwrap()
         );
 
@@ -228,7 +239,7 @@ kernel_common::integration_test!({
             rel_data.len() as u64,
             0,
         );
-        kprintln!("10. create/write file relative to dir fd passed");
+        kprintln!("11. create/write file relative to dir fd passed");
 
         call_syscall(&thread, number::CLOSE, fd_new_rel, 0, 0, 0);
         call_syscall(&thread, number::CLOSE, fd_nested, 0, 0, 0);
@@ -246,17 +257,25 @@ kernel_common::integration_test!({
             0,
         );
         assert_eq!(res_no_file as i64, -1);
-        kprintln!("11. open non-existent file failed as expected");
+        kprintln!("12. open non-existent file failed as expected");
 
         // Invalid fd for close
         let res_close_inv = call_syscall(&thread, number::CLOSE, 999, 0, 0, 0);
         assert_eq!(res_close_inv as i64, -1);
-        kprintln!("12. close invalid fd failed as expected");
+        kprintln!("13. close invalid fd failed as expected");
 
         // Invalid fd for read
         let res_read_inv = call_syscall(&thread, number::READ, 999, buf.as_mut_ptr() as u64, 32, 0);
         assert_eq!(res_read_inv as i64, -1);
-        kprintln!("13. read invalid fd failed as expected");
+        kprintln!("14. read invalid fd failed as expected");
+
+        let res_lseek_inv = call_syscall(&thread, number::LSEEK, 999, 0, 0, 0);
+        assert_eq!(res_lseek_inv as i64, -9);
+        kprintln!("15. lseek invalid fd failed with EBADF as expected");
+
+        let res_lseek_stdout = call_syscall(&thread, number::LSEEK, 1, 0, 1, 0);
+        assert_eq!(res_lseek_stdout as i64, -29);
+        kprintln!("16. lseek stdout failed with ESPIPE as expected");
 
         kprintln!("All exhaustive syscall tests passed!");
         DONE.store(1, Ordering::SeqCst);

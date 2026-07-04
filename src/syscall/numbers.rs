@@ -6,6 +6,7 @@ pub mod number {
     pub const OPENAT: u64 = 56;
     pub const CLOSE: u64 = 57;
     pub const PIPE2: u64 = 59;
+    pub const LSEEK: u64 = 62;
     pub const READ: u64 = 63;
     pub const WRITE: u64 = 64;
     pub const PSELECT6: u64 = 72;
@@ -26,6 +27,7 @@ pub mod number {
     pub const STAT: u64 = 4;
     pub const LSTAT: u64 = 6;
     pub const POLL: u64 = 7;
+    pub const LSEEK: u64 = 8;
     pub const ACCESS: u64 = 21;
     pub const PIPE: u64 = 22;
     pub const SELECT: u64 = 23;
@@ -60,4 +62,52 @@ pub mod wrapper_constants {
     pub const CLONE_VM: u64 = 0x00000100;
     #[cfg(target_arch = "x86_64")]
     pub const CLONE_VFORK: u64 = 0x00004000;
+}
+
+pub fn syscall_name(num: u64) -> &'static str {
+    match num {
+        number::READ => "read",
+        number::WRITE => "write",
+        number::OPENAT => "openat",
+        number::CLOSE => "close",
+        number::LSEEK => "lseek",
+        number::CLONE => "clone",
+        number::PIPE2 => "pipe2",
+        number::NEWFSTATAT => "newfstatat",
+        number::PPOLL => "ppoll",
+        number::FACCESSAT => "faccessat",
+        number::PSELECT6 => "pselect6",
+        number::MKDIRAT => "mkdirat",
+        number::UNLINKAT => "unlinkat",
+        number::EXIT => "exit",
+        number::GETPID => "getpid",
+        number::MMAP => "mmap",
+
+        #[cfg(target_arch = "x86_64")]
+        number::OPEN => "open",
+        #[cfg(target_arch = "x86_64")]
+        number::STAT => "stat",
+        #[cfg(target_arch = "x86_64")]
+        number::LSTAT => "lstat",
+        #[cfg(target_arch = "x86_64")]
+        number::POLL => "poll",
+        #[cfg(target_arch = "x86_64")]
+        number::ACCESS => "access",
+        #[cfg(target_arch = "x86_64")]
+        number::PIPE => "pipe",
+        #[cfg(target_arch = "x86_64")]
+        number::SELECT => "select",
+        #[cfg(target_arch = "x86_64")]
+        number::FORK => "fork",
+        #[cfg(target_arch = "x86_64")]
+        number::VFORK => "vfork",
+        #[cfg(target_arch = "x86_64")]
+        number::MKDIR => "mkdir",
+        #[cfg(target_arch = "x86_64")]
+        number::RMDIR => "rmdir",
+        #[cfg(target_arch = "x86_64")]
+        number::UNLINK => "unlink",
+
+        _ => "unknown",
+    }
 }
