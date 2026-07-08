@@ -1,2 +1,4 @@
 Starting Testing Code...
+handling syscall getpid for process: 1
+handling syscall exit for process: 1
 User thread exited successfully.

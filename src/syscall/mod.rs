@@ -61,11 +61,12 @@ pub trait SyscallContext {
 
 pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u64 {
     let num = ctx.syscall_number();
+    let proc = thread.process.get().unwrap();
+    let pid = proc.get_pid();
     kprintln!(
-        "handling syscall {}, {} for thread {}",
-        num,
+        "handling syscall {} for process: {}",
         syscall_name(num),
-        thread.tid()
+        pid
     );
 
     match num {

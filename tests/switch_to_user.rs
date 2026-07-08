@@ -5,7 +5,6 @@
 
 kernel_common::integration_test!({
     use kernel_common::{
-        arch::{Arch, ArchTrait},
         devices::discovery::BLOCK_DEVICES,
         elf::ElfLoader,
         fs::{ext2::Ext2, vfs::VFS},
@@ -28,15 +27,11 @@ kernel_common::integration_test!({
         .virtual_memory
         .mmap(None, 4096 * 4, false, None)
         .unwrap();
-    let stack_ptr = Arch::setup_stack(
-        (stack + 4096 * 4) as u64,
-        process.get_address_space(),
-        1,
-        &["init"],
-        &[],
-    )
-    .expect("Failed to setup stack for user thread.");
-    spawn_user_thread(&process, start_address as usize, stack_ptr as usize);
+    spawn_user_thread(
+        &process,
+        start_address as usize,
+        (stack + 4096 * 4) as usize,
+    );
     let exit_code = process.exit_code.get();
     if exit_code == 0 {
         kprintln!("User thread exited successfully.");
