@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use core::ptr::NonNull;
 
 use virtio_drivers::transport::{
@@ -10,11 +10,14 @@ use virtio_drivers::transport::{
     },
 };
 
-use crate::devices::{
-    block::virtio_blk::VirtIOBlkDiskDriver,
-    discovery::{self, DeviceDiscovery, DeviceNode, DeviceType},
-    network::virtio_net::VirtIONetDriver,
-    virtio::{KernelConfigurationAccess, VirtioHal},
+use crate::{
+    devices::{
+        block::virtio_blk::VirtIOBlkDiskDriver,
+        char::virtio_input::VirtIOInputDriver,
+        discovery::{self, DeviceDiscovery, DeviceNode, DeviceType},
+        network::virtio_net::VirtIONetDriver,
+        virtio::{KernelConfigurationAccess, VirtioHal},
+    },
 };
 
 pub struct VirtioDiscovery;
@@ -37,11 +40,15 @@ impl DeviceDiscovery for VirtioDiscovery {
                     match transport.device_type() {
                         virtio_drivers::transport::DeviceType::Block => {
                             let driver = VirtIOBlkDiskDriver::new(transport);
-                            return Some(vec![discovery::DeviceType::Block(Box::new(driver))]);
+                            return Some(vec![discovery::DeviceType::Block(Arc::new(driver))]);
                         }
                         virtio_drivers::transport::DeviceType::Network => {
                             let driver = VirtIONetDriver::<VirtioHal, _, 16>::new(transport);
-                            return Some(vec![discovery::DeviceType::Network(Box::new(driver))]);
+                            return Some(vec![discovery::DeviceType::Network(Arc::new(driver))]);
+                        }
+                        virtio_drivers::transport::DeviceType::Input => {
+                            let driver = VirtIOInputDriver::<VirtioHal, _>::new(transport);
+                            return Some(vec![discovery::DeviceType::Char(Arc::new(driver))]);
                         }
                         _ => {}
                     }
@@ -62,11 +69,15 @@ impl DeviceDiscovery for VirtioDiscovery {
             match transport.device_type() {
                 virtio_drivers::transport::DeviceType::Block => {
                     let driver = VirtIOBlkDiskDriver::new(transport);
-                    return Some(vec![discovery::DeviceType::Block(Box::new(driver))]);
+                    return Some(vec![discovery::DeviceType::Block(Arc::new(driver))]);
                 }
                 virtio_drivers::transport::DeviceType::Network => {
                     let driver = VirtIONetDriver::<VirtioHal, _, 16>::new(transport);
-                    return Some(vec![discovery::DeviceType::Network(Box::new(driver))]);
+                    return Some(vec![discovery::DeviceType::Network(Arc::new(driver))]);
+                }
+                virtio_drivers::transport::DeviceType::Input => {
+                    let driver = VirtIOInputDriver::<VirtioHal, _>::new(transport);
+                    return Some(vec![discovery::DeviceType::Char(Arc::new(driver))]);
                 }
                 _ => {}
             }
