@@ -2,6 +2,7 @@ use alloc::{string::String, sync::Arc, vec, vec::Vec};
 
 use super::{AT_FDCWD, SyscallContext};
 use crate::{
+    arch::{Arch, ArchTrait},
     fs::{
         file::File,
         vfs::{FsError, INodeType, VFS},
@@ -21,29 +22,55 @@ fn errno(code: i32) -> u64 {
     (-(code as i64)) as u64
 }
 
-// TODO fix this to use proper user copying
-pub fn read_user_string(ptr: u64, ctx: &impl SyscallContext) -> Result<String, &'static str> {
+const MAX_USER_STRING_LEN: usize = 4096;
+const USER_STRING_COPY_CHUNK: usize = 256;
+
+pub fn read_user_string(
+    ptr: u64,
+    thread: &Arc<Thread>,
+    ctx: &impl SyscallContext,
+) -> Result<String, &'static str> {
     if !ctx.is_user_address(ptr) {
         return Err("Invalid address");
     }
-    let mut s = String::new();
-    let mut i = 0;
-    loop {
-        let addr = ptr + i;
+
+    let address_space = thread.process.get().unwrap().get_address_space();
+    let mut bytes = Vec::new();
+
+    while bytes.len() < MAX_USER_STRING_LEN {
+        let addr = ptr
+            .checked_add(bytes.len() as u64)
+            .ok_or("Address overflow during string read")?;
         if !ctx.is_user_address(addr) {
             return Err("Invalid address during string read");
         }
-        let c = unsafe { *(addr as *const u8) };
-        if c == 0 {
-            break;
+
+        let page_left = Arch::PAGE_SIZE - (addr as usize % Arch::PAGE_SIZE);
+        let to_copy = core::cmp::min(
+            MAX_USER_STRING_LEN - bytes.len(),
+            core::cmp::min(USER_STRING_COPY_CHUNK, page_left),
+        );
+
+        let end_addr = addr
+            .checked_add((to_copy - 1) as u64)
+            .ok_or("Address overflow during string read")?;
+        if !ctx.is_user_address(end_addr) {
+            return Err("Invalid address during string read");
         }
-        s.push(c as char);
-        i += 1;
-        if i > 4096 {
-            return Err("String too long");
+
+        let mut chunk = [0u8; USER_STRING_COPY_CHUNK];
+        copy_from_user(address_space, addr, &mut chunk[..to_copy])
+            .map_err(|_| "Failed to copy user string")?;
+
+        if let Some(nul_pos) = chunk[..to_copy].iter().position(|&byte| byte == 0) {
+            bytes.extend_from_slice(&chunk[..nul_pos]);
+            return String::from_utf8(bytes).map_err(|_| "User string was not valid UTF-8");
         }
+
+        bytes.extend_from_slice(&chunk[..to_copy]);
     }
-    Ok(s)
+
+    Err("String too long")
 }
 
 // ABI Decoder Layer
@@ -172,7 +199,7 @@ pub fn do_sys_openat(
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> u64 {
-    let pathname = match read_user_string(pathname_ptr, ctx) {
+    let pathname = match read_user_string(pathname_ptr, thread, ctx) {
         Ok(s) => s,
         Err(_) => {
             return -1i64 as u64;
