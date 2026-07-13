@@ -130,6 +130,14 @@ impl<T: Transport> Device for VirtIOBlkDiskDriver<VirtioHal, T> {
     fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
         0
     }
+
+    fn name(&self) -> &'static str {
+        "virtio_blk"
+    }
+
+    fn requested_devfs_name(&self) -> Option<&'static str> {
+        Some("disk")
+    }
 }
 
 fn check_buffer_size(buffer: &[u8], block_size: usize) -> Result<(), BlockDeviceError> {

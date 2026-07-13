@@ -55,4 +55,12 @@ impl<T: Transport> Device for VirtIOInputDriver<VirtioHal, T> {
     fn ioctl(&self, _request: u64, _arg1: u64, _arg2: u64) -> u64 {
         0
     }
+
+    fn name(&self) -> &'static str {
+        "virtio-input"
+    }
+
+    fn requested_devfs_name(&self) -> Option<&'static str> {
+        Some("event")
+    }
 }

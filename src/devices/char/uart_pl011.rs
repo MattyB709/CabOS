@@ -77,6 +77,10 @@ impl Device for UartPl011Driver {
     fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
         0
     }
+
+    fn name(&self) -> &'static str {
+        "uart-pl011"
+    }
 }
 
 pub struct UartPl011Discovery;

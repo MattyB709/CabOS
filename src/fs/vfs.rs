@@ -202,7 +202,8 @@ pub trait Filesystem: Send + Sync {
 pub enum INodeType {
     File,
     Directory,
-    // symlink or device, probably
+    Device, 
+    // symlink possibly 
     Other,
 }
 

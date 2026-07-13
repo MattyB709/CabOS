@@ -12,6 +12,8 @@ use crate::{
     sync::{IntMutex, MutexLike},
 };
 
+use crate::devices::discovery::{BLOCK_DEVICES, CHAR_DEVICES};
+
 pub static DEV: Once<Arc<Dev>> = Once::new();
 
 pub struct Dev {
@@ -184,7 +186,17 @@ impl VNode for DevINode {
 pub fn allocate_device_inode(fname: &str, device: Arc<dyn VFSDevice>) -> Result<(), FsError> {
     let dev: Arc<Dev> = DEV.get().unwrap().clone();
     let root = dev.get_root()?;
-    let inode: Arc<dyn VNode> = root.create_child(fname, INodeType::Other)?;
+    let inode: Arc<dyn VNode> = root.create_child(fname, INodeType::Device)?;
     inode.set_device(device)?;
     Ok(())
+}
+
+// 
+pub fn register_devices() {
+    let block_devices = BLOCK_DEVICES.lock();
+    for block in block_devices.iter() {
+        if let Some(devfs_name) = block.requested_devfs_name() {
+            let _ = allocate_device_inode(devfs_name, block.clone());
+        }
+    }
 }
