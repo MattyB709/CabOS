@@ -33,10 +33,6 @@ impl<T: Transport> VirtIONetDriver<VirtioHal, T, 16> {
 }
 
 impl<T: Transport> NetworkDevice for VirtIONetDriver<VirtioHal, T, 16> {
-    fn name(&self) -> &str {
-        "virtio_net"
-    }
-
     fn send_packet(&self, packet: &[u8]) -> Result<(), NetworkError> {
         self.net
             .lock()
@@ -60,5 +56,9 @@ impl<T: Transport> Device for VirtIONetDriver<VirtioHal, T, 16> {
     #[allow(unused_variables)]
     fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
         0 // stub 0 = success required by Device supertrait
+    }
+
+    fn name(&self) -> &'static str {
+        "virtio_net"
     }
 }

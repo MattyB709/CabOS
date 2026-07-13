@@ -2,7 +2,6 @@ pub mod virtio_blk;
 use alloc::{string::String, vec, vec::Vec};
 
 use crate::devices::Device;
-use crate::fs::vfs::{FsError, VFSDevice};
 
 #[derive(Debug)]
 pub enum BlockDeviceError {
@@ -20,7 +19,6 @@ pub enum PhysicalAddressSize {
 }
 
 pub trait BlockDevice: Device {
-    fn name(&self) -> &str;
     fn block_size(&self) -> usize;
     fn block_count(&self) -> usize;
 
@@ -184,14 +182,3 @@ pub trait BlockDevice: Device {
         Ok(total_written)
     }
 }
-
-impl VFSDevice for dyn BlockDevice {
-    fn read_unaligned(&self, offset: usize, buffer: &mut [u8]) -> Result<usize, FsError> {
-        self.read(offset, buffer).map_err(|_| FsError::ReadError)
-    }
-
-    fn write_unaligned(&self, offset: usize, buffer: &[u8]) -> Result<usize, FsError> {
-        self.write(offset, buffer).map_err(|_| FsError::WriteError)
-    }
-}
-

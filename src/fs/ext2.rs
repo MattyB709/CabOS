@@ -1082,6 +1082,7 @@ impl VNode for FNode {
             INodeType::Directory => 2,
             INodeType::File => 1,
             INodeType::Other => 0,
+            _ => return Err(FsError::InvalidInput),
         };
         self.create_entry(target, inumber as u32, file_type)
     }

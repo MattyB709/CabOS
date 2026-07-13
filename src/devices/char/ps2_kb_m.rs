@@ -1,15 +1,12 @@
+#![allow(dead_code)]
+// TODO port ps2 keyboard as a regular character device to devfs with new devfs interface
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
+#[allow(unused_imports)]
 use ps2::{Controller, error::ControllerError, flags::ControllerConfigFlags};
 use spin::Mutex;
 
-use crate::{
-    Arch, ArchTrait,
-    arch::apic,
-    fs::vfs::{FsError, VFSDevice},
-    print::kprintln,
-    sync::Promise,
-};
+use crate::{Arch, ArchTrait, arch::apic, sync::Promise};
 struct Ps2Keyboard {
     keyboard_req_queue: Arc<Mutex<Vec<Arc<Promise<char>>>>>,
 }
@@ -42,23 +39,6 @@ impl Ps2Keyboard {
             }
         }
         Some(())
-    }
-}
-
-impl VFSDevice for Ps2Keyboard {
-    fn read_unaligned(&self, _offset: usize, buffer: &mut [u8]) -> Result<usize, FsError> {
-        if buffer.is_empty() {
-            return Ok(0);
-        }
-        let req = Arc::new(Promise::new());
-        self.keyboard_req_queue.lock().insert(0, req.clone());
-        buffer[0] = req.get() as u8;
-        Ok(1)
-    }
-
-    fn write_unaligned(&self, _offset: usize, _buffer: &[u8]) -> Result<usize, FsError> {
-        // not writable
-        Err(FsError::InvalidOperation)
     }
 }
 
@@ -190,6 +170,7 @@ fn wait_until_ready() {
     }
 }
 
+/*
 /// Initialize both PS/2 devices (keyboard + mouse) following the OSDev wiki sequence.
 /// Must be called once on the BSP before enabling IRQs.
 /// https://docs.rs/ps2/latest/ps2/
@@ -277,3 +258,5 @@ pub fn init_ps2() -> Result<(), &'static str> {
     //reset again?
     Ok(())
 }
+
+*/

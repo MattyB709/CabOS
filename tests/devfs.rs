@@ -3,17 +3,22 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(kernel_common::test_runner)]
 
+use kernel_common::devices::Device;
+
 kernel_common::integration_test!({
     extern crate alloc;
 
     use alloc::sync::Arc;
 
     use kernel_common::{
-        devices::discovery::BLOCK_DEVICES,
+        devices::{
+            char::{CharDevice, CharDeviceError},
+            discovery::BLOCK_DEVICES,
+        },
         fs::{
-            dev::allocate_device_inode,
+            dev::{DEV, DeviceBackend},
             ext2::Ext2,
-            vfs::{FsError, VFS, VFSDevice},
+            vfs::VFS,
         },
         print::kprintln,
         sync::MutexLike,
@@ -22,14 +27,28 @@ kernel_common::integration_test!({
     // Trivial device: reads zeros, silently accepts writes.
     struct NullDevice;
 
-    impl VFSDevice for NullDevice {
-        fn read_unaligned(&self, _offset: usize, buffer: &mut [u8]) -> Result<usize, FsError> {
+    impl CharDevice for NullDevice {
+        fn read(&self, buffer: &mut [u8]) -> Result<usize, CharDeviceError> {
             buffer.fill(0);
             Ok(buffer.len())
         }
 
-        fn write_unaligned(&self, _offset: usize, buffer: &[u8]) -> Result<usize, FsError> {
+        fn write(&self, buffer: &[u8]) -> Result<usize, CharDeviceError> {
             Ok(buffer.len())
+        }
+    }
+
+    impl Device for NullDevice {
+        fn ioctl(&self, _request: u64, _arg1: u64, _arg2: u64) -> u64 {
+            0
+        }
+
+        fn name(&self) -> &'static str {
+            "null"
+        }
+
+        fn requested_devfs_name(&self) -> Option<&'static str> {
+            Some("null")
         }
     }
 
@@ -41,19 +60,18 @@ kernel_common::integration_test!({
     let _ = VFS.mount(ext2.clone(), &["/"]).unwrap();
 
     // Register the device at /dev/null_test.
-    allocate_device_inode("null_test", Arc::new(NullDevice))
-        .expect("failed to register NullDevice in DevFS");
-    kprintln!("registered /dev/null_test");
+    let dev = DEV.get().expect("DEV not initialized");
+    let null = Arc::new(NullDevice);
+    dev.add_device_node(null.name(), DeviceBackend::Char(null));
+    kprintln!("registered /dev/null");
 
     // Reach /dev via VFS mount traversal, then look up the device inode by name.
     let root = VFS.get_root().expect("VFS root not set");
     let dev_root = VFS
         .partial_lookup(&root, &["/", "dev"])
         .expect("mount traversal to /dev failed");
-    let null_node = dev_root
-        .lookup("null_test")
-        .expect("/dev/null_test not found");
-    kprintln!("found /dev/null_test via VFS");
+    let null_node = dev_root.lookup("null").expect("/dev/null not found");
+    kprintln!("found /dev/null via VFS");
 
     // Read: device should fill the buffer with zeros.
     let mut buf = alloc::vec![0xFFu8; 8];

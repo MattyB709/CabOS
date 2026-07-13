@@ -509,10 +509,11 @@ pub fn parse_acpi(is_start: bool) -> Option<Vec<DeviceType>> {
         //source: https://elixir.bootlin.com/linux/v7.0.1/source/include/acpi/actbl.h#L261
         let ps2_enabled = fadt.flags & (1 << 1) != 0;
         kprintln!("PS2 enabled? {}", ps2_enabled);
-        if ps2_enabled && !is_start {
-            #[cfg(target_arch = "x86_64")]
-            crate::devices::char::ps2_kb_m::init_ps2().ok()?;
-        }
+        // TODO fix ps2 to go through normal devfs registration
+        // if ps2_enabled && !is_start {
+        //     #[cfg(target_arch = "x86_64")]
+        //     crate::devices::char::ps2_kb_m::init_ps2().ok()?;
+        // }
     }
     if !is_start {
         kprintln!("PCIE");

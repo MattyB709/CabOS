@@ -62,10 +62,6 @@ impl<T: Transport> VirtIOBlkDiskDriver<VirtioHal, T> {
 }
 
 impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
-    fn name(&self) -> &str {
-        "virtio_blk"
-    }
-
     fn read_blocks(
         &self,
         block_idxs: &[usize],

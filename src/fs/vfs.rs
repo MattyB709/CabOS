@@ -22,12 +22,6 @@ pub enum FsError {
     Other(String),
 }
 
-// Shim between the different variants of devices and the VFS
-pub trait VFSDevice: Send + Sync {
-    fn read_unaligned(&self, offset: usize, buffer: &mut [u8]) -> Result<usize, FsError>;
-    fn write_unaligned(&self, offset: usize, buffer: &[u8]) -> Result<usize, FsError>;
-}
-
 pub struct VFS {
     filesystems: IntMutex<BTreeMap<usize, Arc<dyn Filesystem>>>,
     inode_cache: IntMutex<INodeCache>,
@@ -202,8 +196,8 @@ pub trait Filesystem: Send + Sync {
 pub enum INodeType {
     File,
     Directory,
-    Device, 
-    // symlink possibly 
+    Device,
+    // symlink possibly
     Other,
 }
 
@@ -240,11 +234,6 @@ pub trait VNode: Send + Sync {
 
     // should only be implemented for directories
     fn create_child(&self, _name: &str, _inode_type: INodeType) -> Result<Arc<dyn VNode>, FsError> {
-        Err(FsError::NotImplemented)
-    }
-
-    // should only be implemented for devices
-    fn set_device(&self, _: Arc<dyn VFSDevice>) -> Result<(), FsError> {
         Err(FsError::NotImplemented)
     }
 

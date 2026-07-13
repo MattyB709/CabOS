@@ -8,28 +8,39 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Once;
 
 use crate::{
-    fs::vfs::{Filesystem, FsError, INodeKey, INodeType, VFSDevice, VNode},
+    devices::{
+        block::BlockDevice,
+        char::CharDevice,
+        discovery::{BLOCK_DEVICES, CHAR_DEVICES},
+    },
+    fs::vfs::{Filesystem, FsError, INodeKey, INodeType, VNode},
     sync::{IntMutex, MutexLike},
 };
-
-use crate::devices::discovery::{BLOCK_DEVICES, CHAR_DEVICES};
 
 pub static DEV: Once<Arc<Dev>> = Once::new();
 
 pub struct Dev {
     self_ref: Once<Weak<Self>>,
     counter: AtomicUsize,
-    devices: IntMutex<BTreeMap<usize, Arc<dyn VFSDevice>>>,
-    root: Once<Arc<dyn VNode>>,
+    devices: IntMutex<BTreeMap<usize, Arc<DevINode>>>,
+    root: Once<Arc<DevINode>>,
     fs_id: IntMutex<Option<usize>>,
+}
+
+// Router enum to send calls to the correct device type, stored in each DevINode
+#[derive(Clone)]
+pub enum DeviceBackend {
+    Block(Arc<dyn BlockDevice>),
+    Char(Arc<dyn CharDevice>),
 }
 
 pub struct DevINode {
     fs: Weak<Dev>,
     inumber: usize,
-    device: IntMutex<Option<Arc<dyn VFSDevice>>>,
+    // The device associated with this inode. For the root this will never be initialized.
+    device: Once<DeviceBackend>,
     //Devices can have children!
-    children: IntMutex<BTreeMap<String, Arc<dyn VNode>>>,
+    children: IntMutex<BTreeMap<String, Arc<DevINode>>>,
 }
 
 impl Dev {
@@ -42,28 +53,30 @@ impl Dev {
             root: Once::new(),
         });
         fs.self_ref.call_once(|| Arc::downgrade(&fs));
+        fs.root.call_once(|| {
+            Arc::new(DevINode {
+                fs: Arc::downgrade(&fs),
+                inumber: 0,
+                device: Once::new(),
+                children: IntMutex::new(BTreeMap::new()),
+            })
+        });
         fs
     }
 
-    fn alloc_inode(&self, inumber: usize) -> Result<Arc<dyn VNode>, FsError> {
-        let devices = self.devices.lock();
-        let device = devices.get(&inumber);
-        if let Some(device) = device {
-            let arc_dev = device;
-            Ok(Arc::new(DevINode {
-                fs: self.self_ref.get().ok_or(FsError::ReadError)?.clone(),
-                device: IntMutex::new(Some(arc_dev.clone())),
-                inumber,
-                children: IntMutex::new(BTreeMap::new()),
-            }))
-        } else {
-            Ok(Arc::new(DevINode {
-                fs: self.self_ref.get().ok_or(FsError::ReadError)?.clone(),
-                device: IntMutex::new(None),
-                inumber,
-                children: IntMutex::new(BTreeMap::new()),
-            }))
-        }
+    // TODO add proper path traverasal so not all devices are added to the root
+    // TODO also allow for user creation of special /dev files, in general just more flexibility
+    pub fn add_device_node(&self, name: &str, device: DeviceBackend) {
+        let inumber = self.counter.fetch_add(1, Ordering::SeqCst);
+        let root = self.root.get().unwrap();
+        let inode = Arc::new(DevINode {
+            fs: self.self_ref.get().unwrap().clone(),
+            inumber,
+            device: Once::new(),
+            children: IntMutex::new(BTreeMap::new()),
+        });
+        inode.device.call_once(|| device);
+        root.children.lock().insert(name.to_string(), inode);
     }
 }
 
@@ -74,16 +87,10 @@ impl Filesystem for Dev {
 
     fn get_inode(&self, inumber: usize) -> Result<Arc<dyn VNode>, FsError> {
         if inumber == 0 {
-            if let Some(root) = self.root.get() {
-                return Ok(root.clone());
-            } else {
-                let root = self.alloc_inode(0)?;
-                self.root.call_once(|| root.clone());
-                return Ok(root);
-            }
+            return Ok(self.root.get().unwrap().clone());
         }
-        if self.devices.lock().contains_key(&inumber) {
-            self.alloc_inode(inumber)
+        if let Some(device) = self.devices.lock().get(&inumber) {
+            Ok(device.clone())
         } else {
             Err(FsError::NotFound)
         }
@@ -111,58 +118,38 @@ impl VNode for DevINode {
         }
     }
 
-    fn create_child(&self, fname: &str, inode_type: INodeType) -> Result<Arc<dyn VNode>, FsError> {
-        if self.inumber != 0 || inode_type != INodeType::Other {
-            return Err(FsError::InvalidOperation);
-        }
-        let fs = self.fs.upgrade().ok_or(FsError::ReadError)?;
-        let inumber = fs.counter.fetch_add(1, Ordering::SeqCst);
-        let vnode = fs.alloc_inode(inumber);
-        self.children
-            .lock()
-            .insert(fname.to_string(), vnode.clone()?);
-        vnode
-    }
-
+    // exact semantics around children in /dev are TBD, currently unused besides children of the root
     fn lookup(&self, name: &str) -> Result<Arc<dyn VNode>, FsError> {
         let children = self.children.lock();
         if let Some(child) = children.get(name) {
-            Ok(Arc::clone(child))
+            Ok(child.clone())
         } else {
             Err(FsError::NotFound)
         }
     }
 
-    fn set_device(&self, device: Arc<dyn VFSDevice>) -> Result<(), FsError> {
-        let fs = self.fs.upgrade().ok_or(FsError::ReadError)?;
-        fs.devices.lock().insert(self.inumber, device.clone());
-        self.device.lock().replace(device);
-        Ok(())
-    }
-
-    // TODO: Device people, do these yourself. I don't know what your requirements are
-    fn read_page(&self, _physical_address: usize, _offset: usize) -> Result<usize, FsError> {
-        Err(FsError::NotImplemented)
-    }
-
-    fn write_page(&self, _physical_address: usize, _offset: usize) -> Result<usize, FsError> {
-        Err(FsError::NotImplemented)
-    }
-
-    fn read_unaligned(&self, _offset: usize, buffer: &mut [u8]) -> Result<usize, FsError> {
-        if let Some(device) = self.device.lock().as_ref() {
-            device.read_unaligned(_offset, buffer)
-        } else {
-            Err(FsError::InvalidOperation)
+    fn read_unaligned(&self, offset: usize, buffer: &mut [u8]) -> Result<usize, FsError> {
+        if let Some(device) = self.device.get() {
+            return match device {
+                DeviceBackend::Block(block) => {
+                    block.read(offset, buffer).map_err(|_| FsError::ReadError)
+                }
+                DeviceBackend::Char(char) => char.read(buffer).map_err(|_| FsError::ReadError),
+            };
         }
+        Err(FsError::InvalidOperation)
     }
 
-    fn write_unaligned(&self, _offset: usize, buffer: &[u8]) -> Result<usize, FsError> {
-        if let Some(device) = self.device.lock().as_ref() {
-            device.write_unaligned(_offset, buffer)
-        } else {
-            Err(FsError::InvalidOperation)
+    fn write_unaligned(&self, offset: usize, buffer: &[u8]) -> Result<usize, FsError> {
+        if let Some(device) = self.device.get() {
+            return match device {
+                DeviceBackend::Block(block) => {
+                    block.write(offset, buffer).map_err(|_| FsError::WriteError)
+                }
+                DeviceBackend::Char(char) => char.write(buffer).map_err(|_| FsError::WriteError),
+            };
         }
+        Err(FsError::InvalidOperation)
     }
 
     fn get_inode_key(&self) -> Result<INodeKey, FsError> {
@@ -180,23 +167,24 @@ impl VNode for DevINode {
     }
 }
 
-/*
-* Allocates a device inode accessible by the user under `/dev/<fname>. `
-*/
-pub fn allocate_device_inode(fname: &str, device: Arc<dyn VFSDevice>) -> Result<(), FsError> {
-    let dev: Arc<Dev> = DEV.get().unwrap().clone();
-    let root = dev.get_root()?;
-    let inode: Arc<dyn VNode> = root.create_child(fname, INodeType::Device)?;
-    inode.set_device(device)?;
-    Ok(())
-}
-
-// 
+// register all character and block devices into devfs based on their desired devfs name, if applicable
+// TODO handle devices that want the same name, i.e dev/event0, dev/event1, etc.
 pub fn register_devices() {
     let block_devices = BLOCK_DEVICES.lock();
+    let dev = DEV.get().unwrap();
     for block in block_devices.iter() {
         if let Some(devfs_name) = block.requested_devfs_name() {
-            let _ = allocate_device_inode(devfs_name, block.clone());
+            let device_backend = DeviceBackend::Block(block.clone());
+            // this acquires a second lock, lock ordering here is important
+            dev.add_device_node(devfs_name, device_backend);
+        }
+    }
+
+    let char_devices = CHAR_DEVICES.lock();
+    for char in char_devices.iter() {
+        if let Some(devfs_name) = char.requested_devfs_name() {
+            let device_backend = DeviceBackend::Char(char.clone());
+            dev.add_device_node(devfs_name, device_backend);
         }
     }
 }
