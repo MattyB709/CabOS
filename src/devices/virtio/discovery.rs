@@ -18,6 +18,7 @@ use crate::{
         network::virtio_net::VirtIONetDriver,
         virtio::{KernelConfigurationAccess, VirtioHal},
     },
+    print::kprintln,
 };
 
 pub struct VirtioDiscovery;
@@ -48,6 +49,7 @@ impl DeviceDiscovery for VirtioDiscovery {
                         }
                         virtio_drivers::transport::DeviceType::Input => {
                             let driver = VirtIOInputDriver::<VirtioHal, _>::new(transport);
+                            kprintln!("virtio input device found");
                             return Some(vec![discovery::DeviceType::Char(Arc::new(driver))]);
                         }
                         _ => {}

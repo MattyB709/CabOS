@@ -20,7 +20,7 @@ use crate::{
 // implementation for it to work with our system block device trait.
 pub struct VirtIOBlkDiskDriver<H: Hal, T: Transport> {
     blk: IntMutex<VirtIOBlk<H, T>>,
-    capacity: usize // in sectors
+    capacity: usize, // in sectors
 }
 
 // TODO: VERIFY THAT THIS IS THE CASE
@@ -42,7 +42,8 @@ impl<T: Transport> VirtIOBlkDiskDriver<VirtioHal, T> {
         check_buffer_size(buffer, self.block_size())?;
         let sectors_per_block = self.block_size() / SECTOR_SIZE;
         let sector_idx = block_idx * sectors_per_block;
-        self.blk.lock()
+        self.blk
+            .lock()
             .read_blocks(sector_idx, buffer)
             .map_err(|_| BlockDeviceError::ReadError)?;
         Ok(())
@@ -52,7 +53,8 @@ impl<T: Transport> VirtIOBlkDiskDriver<VirtioHal, T> {
         check_buffer_size(buffer, self.block_size())?;
         let sectors_per_block = self.block_size() / SECTOR_SIZE;
         let sector_idx = block_idx * sectors_per_block;
-        self.blk.lock()
+        self.blk
+            .lock()
             .write_blocks(sector_idx, buffer)
             .map_err(|_| BlockDeviceError::WriteError)?;
         Ok(())
@@ -115,7 +117,7 @@ impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
     }
 
     fn block_count(&self) -> usize {
-        (self.capacity* SECTOR_SIZE) / self.block_size()
+        (self.capacity * SECTOR_SIZE) / self.block_size()
     }
 
     fn dma_physical_address_size(&self) -> PhysicalAddressSize {

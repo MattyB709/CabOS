@@ -31,11 +31,8 @@ pub trait BlockDevice: Device {
         buffers: &mut [&mut [u8]],
     ) -> Result<(), BlockDeviceError>;
 
-    fn write_blocks(
-        &self,
-        block_idxs: &[usize],
-        buffers: &[&[u8]],
-    ) -> Result<(), BlockDeviceError>;
+    fn write_blocks(&self, block_idxs: &[usize], buffers: &[&[u8]])
+    -> Result<(), BlockDeviceError>;
 
     fn flush(&self) -> Result<(), BlockDeviceError>;
     fn dma_physical_address_size(&self) -> PhysicalAddressSize;

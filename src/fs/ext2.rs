@@ -9,7 +9,10 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::vfs::{Filesystem, FsError, INodeKey, INodeType, VNode};
 use crate::{
-    arch::{Arch, ArchTrait}, devices::block::BlockDevice, memory::physical_memory::HHDM_OFFSET, sync::{IntMutex, MutexLike}
+    arch::{Arch, ArchTrait},
+    devices::block::BlockDevice,
+    memory::physical_memory::HHDM_OFFSET,
+    sync::{IntMutex, MutexLike},
 };
 
 pub struct Ext2 {
@@ -485,7 +488,7 @@ impl Ext2 {
                     self_ref: Once::new(),
                 });
                 ext2.self_ref.call_once(|| Arc::downgrade(&ext2));
-                return Ok(ext2)
+                return Ok(ext2);
             }
         }
 
@@ -494,7 +497,6 @@ impl Ext2 {
 
     fn read_block(&self, block_number: usize, buffer: &mut [u8]) -> Result<(), FsError> {
         self.check_block_inputs(block_number, buffer.len())?;
-
 
         // read a block into the buffer, returning an error if the read fails or doesn't return a full block. Use read to not have
         // to deal with different block sizes
@@ -512,8 +514,9 @@ impl Ext2 {
         self.check_block_inputs(block_number, buffer.len())?;
 
         // same as above
-        if let Ok(bytes_written) =
-            self.block_device.write(block_number * self.block_size, &buffer[0..self.block_size])
+        if let Ok(bytes_written) = self
+            .block_device
+            .write(block_number * self.block_size, &buffer[0..self.block_size])
             && bytes_written == self.block_size
         {
             return Ok(());

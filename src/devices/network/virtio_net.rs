@@ -7,7 +7,10 @@ use virtio_drivers::{
 };
 
 use super::{NetworkDevice, NetworkError};
-use crate::{sync::{IntMutex, MutexLike}, devices::{Device, virtio::VirtioHal}};
+use crate::{
+    devices::{Device, virtio::VirtioHal},
+    sync::{IntMutex, MutexLike},
+};
 /// VirtIONetDriver wraps the virtio-drivers VirtIONet device and ties it to our kernel's HAL
 /// constructed from a transport (MMIO) and used by the device framework to send and receive packets
 pub struct VirtIONetDriver<H: Hal, T: Transport, const QUEUE_SIZE: usize> {
@@ -21,8 +24,10 @@ unsafe impl<H: Hal, T: Transport, const Q: usize> Sync for VirtIONetDriver<H, T,
 impl<T: Transport> VirtIONetDriver<VirtioHal, T, 16> {
     pub fn new(transport: T) -> Self {
         Self {
-            net: IntMutex::new(VirtIONet::<VirtioHal, T, 16>::new(transport, 1536)
-                .expect("failed to initialize virtio net device")),
+            net: IntMutex::new(
+                VirtIONet::<VirtioHal, T, 16>::new(transport, 1536)
+                    .expect("failed to initialize virtio net device"),
+            ),
         }
     }
 }
@@ -45,8 +50,7 @@ impl<T: Transport> NetworkDevice for VirtIONetDriver<VirtioHal, T, 16> {
         let packet = rx_buf.packet();
         let len = packet.len().min(buffer.len());
         buffer[..len].copy_from_slice(&packet[..len]);
-        net
-            .recycle_rx_buffer(rx_buf)
+        net.recycle_rx_buffer(rx_buf)
             .map_err(|_| NetworkError::ReceiveError)?;
         Ok(len)
     }
