@@ -76,6 +76,7 @@ impl Dev {
             children: IntMutex::new(BTreeMap::new()),
         });
         inode.device.call_once(|| device);
+        self.devices.lock().insert(inumber, inode.clone());
         root.children.lock().insert(name.to_string(), inode);
     }
 }
