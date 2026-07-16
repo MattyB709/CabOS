@@ -38,7 +38,7 @@ impl File {
     }
 
     pub fn seek(&self, offset: i64, whence: i32) -> Result<usize, FsError> {
-        if self.vnode.get_type() != INodeType::File {
+        if !self.vnode.seekable() {
             return Err(FsError::InvalidOperation);
         }
 

@@ -14,7 +14,11 @@ pub enum CharDeviceError {
 }
 
 pub trait CharDevice: Device {
-    fn read(&self, buffer: &mut [u8]) -> Result<usize, CharDeviceError>;
+    fn read(&self, buffer: &mut [u8], offset: usize) -> Result<usize, CharDeviceError>;
 
-    fn write(&self, buffer: &[u8]) -> Result<usize, CharDeviceError>;
+    fn write(&self, buffer: &[u8], offset: usize) -> Result<usize, CharDeviceError>;
+
+    fn seekable(&self) -> bool {
+        false
+    }
 }

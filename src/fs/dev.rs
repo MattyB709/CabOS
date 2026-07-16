@@ -112,10 +112,10 @@ impl VNode for DevINode {
     }
 
     fn get_type(&self) -> INodeType {
-        if self.inumber == 0 {
-            INodeType::Directory
-        } else {
-            INodeType::Other
+        match self.device.get() {
+            Some(DeviceBackend::Block(_)) => INodeType::Block,
+            Some(DeviceBackend::Char(_)) => INodeType::Char,
+            None => INodeType::Directory,
         }
     }
 
@@ -135,7 +135,9 @@ impl VNode for DevINode {
                 DeviceBackend::Block(block) => {
                     block.read(offset, buffer).map_err(|_| FsError::ReadError)
                 }
-                DeviceBackend::Char(char) => char.read(buffer).map_err(|_| FsError::ReadError),
+                DeviceBackend::Char(char) => {
+                    char.read(buffer, offset).map_err(|_| FsError::ReadError)
+                }
             };
         }
         Err(FsError::InvalidOperation)
@@ -147,7 +149,9 @@ impl VNode for DevINode {
                 DeviceBackend::Block(block) => {
                     block.write(offset, buffer).map_err(|_| FsError::WriteError)
                 }
-                DeviceBackend::Char(char) => char.write(buffer).map_err(|_| FsError::WriteError),
+                DeviceBackend::Char(char) => {
+                    char.write(buffer, offset).map_err(|_| FsError::WriteError)
+                }
             };
         }
         Err(FsError::InvalidOperation)
@@ -165,6 +169,14 @@ impl VNode for DevINode {
             inumber: self.inumber,
         };
         Ok(result)
+    }
+
+    fn seekable(&self) -> bool {
+        match self.device.get() {
+            Some(DeviceBackend::Block(_)) => true,
+            Some(DeviceBackend::Char(char)) => char.seekable(),
+            None => false,
+        }
     }
 }
 

@@ -196,7 +196,8 @@ pub trait Filesystem: Send + Sync {
 pub enum INodeType {
     File,
     Directory,
-    Device,
+    Char,
+    Block,
     // symlink possibly
     Other,
 }
@@ -256,6 +257,11 @@ pub trait VNode: Send + Sync {
     // whatever fs it's on. Maybe this could be done differently.
     fn get_inode_key(&self) -> Result<INodeKey, FsError> {
         Err(FsError::NotImplemented)
+    }
+
+    // this is overridden for special filesystems that have more complicated seek semantics, like /dev
+    fn seekable(&self) -> bool {
+        matches!(self.get_type(), INodeType::File | INodeType::Block)
     }
     // Symlink
     // fn traverse() -> str

@@ -29,7 +29,7 @@ impl<T: Transport> VirtIOInputDriver<VirtioHal, T> {
 }
 
 impl<T: Transport> CharDevice for VirtIOInputDriver<VirtioHal, T> {
-    fn read(&self, buffer: &mut [u8]) -> Result<usize, CharDeviceError> {
+    fn read(&self, buffer: &mut [u8], _offset: usize) -> Result<usize, CharDeviceError> {
         let mut bytes_read = 0;
         let len = buffer.len();
         let mut input = self.input.lock();
@@ -45,7 +45,7 @@ impl<T: Transport> CharDevice for VirtIOInputDriver<VirtioHal, T> {
         Ok(bytes_read)
     }
 
-    fn write(&self, _buffer: &[u8]) -> Result<usize, CharDeviceError> {
+    fn write(&self, _buffer: &[u8], _offset: usize) -> Result<usize, CharDeviceError> {
         Err(CharDeviceError::WriteError)
     }
 }

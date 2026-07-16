@@ -43,21 +43,22 @@ impl UartPl011Driver {
 // implement char sink for the uart driver so it can be used as the serial backend
 impl CharSink for UartPl011Driver {
     unsafe fn putc(&self, c: u8) {
-        self.write(&[c]).expect("Failed to write character to UART");
+        self.write(&[c], 0)
+            .expect("Failed to write character to UART");
     }
 
     unsafe fn flush(&self) {}
 }
 
 impl CharDevice for UartPl011Driver {
-    fn read(&self, _buffer: &mut [u8]) -> Result<usize, CharDeviceError> {
+    fn read(&self, _buffer: &mut [u8], _offset: usize) -> Result<usize, CharDeviceError> {
         // TODO implement this, for now we just support output
         Err(CharDeviceError::Other(
             "Read not implemented for UART driver".to_string(),
         ))
     }
 
-    fn write(&self, buffer: &[u8]) -> Result<usize, CharDeviceError> {
+    fn write(&self, buffer: &[u8], _offset: usize) -> Result<usize, CharDeviceError> {
         for &b in buffer {
             if let Some(mapping) = &self.virt_mapping {
                 unsafe {

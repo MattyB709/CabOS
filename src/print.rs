@@ -328,7 +328,7 @@ pub struct LogOptions {
 
 #[used]
 #[unsafe(link_section = ".limine_requests")]
-static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 pub fn init_tty() {
     if let Some(res) = FRAMEBUFFER_REQUEST.get_response()
