@@ -28,18 +28,18 @@ kernel_common::integration_test!({
     struct NullDevice;
 
     impl CharDevice for NullDevice {
-        fn read(&self, buffer: &mut [u8]) -> Result<usize, CharDeviceError> {
+        fn read(&self, buffer: &mut [u8], _offset: usize) -> Result<usize, CharDeviceError> {
             buffer.fill(0);
             Ok(buffer.len())
         }
 
-        fn write(&self, buffer: &[u8]) -> Result<usize, CharDeviceError> {
+        fn write(&self, buffer: &[u8], _offset: usize) -> Result<usize, CharDeviceError> {
             Ok(buffer.len())
         }
     }
 
     impl Device for NullDevice {
-        fn ioctl(&self, _request: u64, _arg1: u64, _arg2: u64) -> u64 {
+        fn ioctl(&self, _request: u64, _arg1: u64) -> u64 {
             0
         }
 

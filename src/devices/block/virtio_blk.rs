@@ -123,7 +123,7 @@ impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
 
 impl<T: Transport> Device for VirtIOBlkDiskDriver<VirtioHal, T> {
     #[allow(unused_variables)]
-    fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
+    fn ioctl(&self, request: u64, arg: u64) -> u64 {
         0
     }
 

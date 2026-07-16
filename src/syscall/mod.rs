@@ -77,6 +77,9 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u
         number::WRITE => {
             ctx.set_return_value(sys_write(thread, ctx));
         }
+        number::IOCTL => {
+            ctx.set_return_value(sys_ioctl(thread, ctx));
+        }
         number::OPENAT => {
             ctx.set_return_value(sys_openat(thread, ctx));
         }

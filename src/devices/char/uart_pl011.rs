@@ -75,7 +75,7 @@ impl Device for UartPl011Driver {
     // for now we just return 0 for ioctl since we don't have any specific commands implemented,
     // but this can be expanded later as needed
     #[allow(unused_variables)]
-    fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
+    fn ioctl(&self, request: u64, arg: u64) -> u64 {
         0
     }
 

@@ -15,7 +15,13 @@ use crate::{
 
 pub const O_CREAT: u64 = 64;
 const EBADF: i32 = 9;
+const ENODEV: i32 = 19;
 const EINVAL: i32 = 22;
+const EIO: i32 = 5;
+const ENOENT: i32 = 2;
+const ENOSPC: i32 = 28;
+const ENOTTY: i32 = 25;
+const EEXIST: i32 = 17;
 const ESPIPE: i32 = 29;
 
 fn errno(code: i32) -> u64 {
@@ -92,6 +98,10 @@ pub fn sys_openat(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
         thread,
         ctx,
     )
+}
+
+pub fn sys_ioctl(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
+    do_sys_ioctl(ctx.arg0() as i32, ctx.arg1(), ctx.arg2(), thread)
 }
 
 pub fn sys_close(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
@@ -285,6 +295,35 @@ pub fn do_sys_close(fd: i32, thread: &Arc<Thread>) -> u64 {
         0
     } else {
         -1i64 as u64
+    }
+}
+
+fn ioctl_errno_from_fs_error(err: FsError) -> u64 {
+    match err {
+        FsError::InvalidInput | FsError::PathMalformed => errno(EINVAL),
+        FsError::InvalidOperation | FsError::NotImplemented => errno(ENOTTY),
+        FsError::NotFound => errno(ENOENT),
+        FsError::NoSpace => errno(ENOSPC),
+        FsError::WriteError | FsError::ReadError | FsError::Corrupted(_) | FsError::Other(_) => {
+            errno(EIO)
+        }
+        FsError::AlreadyExists | FsError::MountAlreadyExists => errno(EEXIST),
+    }
+}
+
+pub fn do_sys_ioctl(fd: i32, request: u64, arg: u64, thread: &Arc<Thread>) -> u64 {
+    let file = {
+        let fd_table = thread.process.get().unwrap().fd_table.lock();
+        let Some(file) = fd_table.get(&fd) else {
+            return errno(EBADF);
+        };
+        Arc::clone(file)
+    };
+
+    match file.ioctl(request, arg) {
+        Ok(ret) => ret,
+        Err(FsError::NotFound) => errno(ENODEV),
+        Err(err) => ioctl_errno_from_fs_error(err),
     }
 }
 

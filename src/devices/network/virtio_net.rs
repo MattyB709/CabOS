@@ -54,7 +54,7 @@ impl<T: Transport> NetworkDevice for VirtIONetDriver<VirtioHal, T, 16> {
 
 impl<T: Transport> Device for VirtIONetDriver<VirtioHal, T, 16> {
     #[allow(unused_variables)]
-    fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
+    fn ioctl(&self, request: u64, arg: u64) -> u64 {
         0 // stub 0 = success required by Device supertrait
     }
 

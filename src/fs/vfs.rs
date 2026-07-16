@@ -259,6 +259,10 @@ pub trait VNode: Send + Sync {
         Err(FsError::NotImplemented)
     }
 
+    fn ioctl(&self, _request: u64, _arg: u64) -> Result<u64, FsError> {
+        Err(FsError::NotImplemented)
+    }
+
     // this is overridden for special filesystems that have more complicated seek semantics, like /dev
     fn seekable(&self) -> bool {
         matches!(self.get_type(), INodeType::File | INodeType::Block)

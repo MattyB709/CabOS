@@ -32,7 +32,7 @@ though it is recommended that you define your own
 
 ```rust
 pub trait Device {
-    fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64;
+    fn ioctl(&self, request: u64, arg: u64) -> u64;
 }
 ```
 
@@ -44,8 +44,9 @@ Right now this is mostly a placeholder for out-of-band control operations. The e
 
 ```rust
 pub trait CharDevice: Device {
-    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, CharDeviceError>;
-    fn write(&self, buffer: &[u8]) -> Result<usize, CharDeviceError>;
+    fn read(&mut self, buffer: &mut [u8], offset: usize) -> Result<usize, CharDeviceError>;
+    fn write(&self, buffer: &[u8], offset: usize) -> Result<usize, CharDeviceError>;
+    fn seekable(&self) -> bool;
 }
 ```
 
@@ -133,9 +134,8 @@ Once discovery returns `DeviceType` values, `discover_devices()` sorts them into
 - `CHAR_DEVICES`
 - `NETWORK_DEVICES`
 
-Each registry is an `IntMutex<Vec<Box<dyn ...>>>`. The registry itself is synchronized, but the kernel does not automatically wrap each individual device in a lock. After a caller removes or borrows a device, that caller is responsible for serializing access correctly.
-
-The tests in `tests/virtio_blk.rs` show the current usage model clearly: they lock `BLOCK_DEVICES`, remove the virtio block device from the vector, and then operate on it directly.
+Each registry is an `IntMutex<Vec<Arc<dyn ...>>>`. Note that these are Arc's because they may
+have multiple owners, each device is expected to internally synchronize concurrect calls. 
 
 ## Kernel Integration
 
@@ -236,7 +236,6 @@ The current device layer is useful, but deliberately incomplete.
 - The concrete implementations are still sparse: PL011 UART, virtio-mmio block, PSCI, and the AArch64 GIC.
 - `NetworkDevice` is only a trait today.
 - `ioctl()` is a stub in the existing drivers.
-- There is no VFS or syscall integration yet, so devices are kernel-internal objects rather than user-visible files.
 - Discovery is tightly coupled to firmware parsing, not to hotplug or runtime bus enumeration.
 
 That makes the current model best thought of as an early kernel driver framework: enough structure to discover hardware, map it safely, and expose typed operations to the rest of the kernel, but not yet a full device-management stack.

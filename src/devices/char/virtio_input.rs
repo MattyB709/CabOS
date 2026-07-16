@@ -52,7 +52,7 @@ impl<T: Transport> CharDevice for VirtIOInputDriver<VirtioHal, T> {
 
 impl<T: Transport> Device for VirtIOInputDriver<VirtioHal, T> {
     // ioctl not registered yet
-    fn ioctl(&self, _request: u64, _arg1: u64, _arg2: u64) -> u64 {
+    fn ioctl(&self, _request: u64, _arg: u64) -> u64 {
         0
     }
 

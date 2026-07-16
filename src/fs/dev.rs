@@ -178,6 +178,16 @@ impl VNode for DevINode {
             None => false,
         }
     }
+
+    fn ioctl(&self, request: u64, arg: u64) -> Result<u64, FsError> {
+        if let Some(device) = self.device.get() {
+            return match device {
+                DeviceBackend::Block(block) => Ok(block.ioctl(request, arg)),
+                DeviceBackend::Char(char) => Ok(char.ioctl(request, arg)),
+            };
+        }
+        Err(FsError::InvalidOperation)
+    }
 }
 
 // register all character and block devices into devfs based on their desired devfs name, if applicable

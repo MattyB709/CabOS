@@ -60,7 +60,7 @@ use crate::{
     devices::discovery::{create_drivers, discover_devices},
     event::init_event_handler,
     fs::{
-        dev::{DEV, Dev},
+        dev::{DEV, Dev, register_devices},
         fake::{FAKE, Fake},
         vfs::VFS,
     },
@@ -185,6 +185,8 @@ pub fn system_init<Work: KernelWorkTrait>() -> ! {
     discover_devices(true);
     kprintln!("Finished first round of device discovery.");
 
+    // registered devices with devfs
+
     // note we don't need to do anything special here because rust doesn't have init_array
     // if we wanted once-initialized data, we would either provide our custom mechanism,
     // or just spam OnceCell
@@ -298,6 +300,8 @@ unsafe extern "C" fn core_init<Work: KernelWorkTrait>(cpu: &Cpu) -> ! {
         kprintln!("Starting second round of device discovery...");
         discover_devices(false);
         kprintln!("Finished second round of device discovery.");
+        register_devices();
+        kprintln!("Registered devices with devfs");
     });
     one!({
         spawn_thread(move || {
