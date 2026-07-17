@@ -5,6 +5,7 @@ use crate::devices::Device;
 pub mod ps2_kb_m;
 pub mod uart_pl011;
 pub mod virtio_input;
+pub  mod limine_framebuffer;
 
 #[derive(Debug)]
 pub enum CharDeviceError {
