@@ -19,7 +19,7 @@ test = false
 
 [dependencies]
 atomic_enum = "0.3.0"
-bitflags = "2.10.0"
+bitflags = { version = "2.10.0", default-features = false } 
 derive_more = { version = "2.0.1", default-features = false, features = ["add_assign", "add", "constructor", "mul", "display", "debug"] }
 flanterm = { version = "0.1.0", path = "flanterm" }
 intrusive-collections = { version = "0.10.0", features = ["nightly"] }

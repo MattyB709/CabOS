@@ -11,7 +11,7 @@ use bitflags::bitflags;
 use flanterm::{
     flanterm_context, flanterm_fb_init, flanterm_flush, flanterm_set_autoflush, flanterm_write,
 };
-use limine::{framebuffer::Framebuffer, request::FramebufferRequest};
+use limine::framebuffer::Framebuffer;
 // use log::Level; TODO: migrate logging over to log rust crate
 use proc_macros::CmdlineParsable;
 use spin::Once;
@@ -19,6 +19,7 @@ use spin::Once;
 use crate::{
     arch::{Arch, ArchTrait, UnwindContext, UnwindContextTrait},
     cmdline::{CmdlineParsable, get_cmdline},
+    devices::char::limine_framebuffer::FRAMEBUFFER_REQUEST,
     symbols::{lookup_location, lookup_symbol},
     sync::{IntMutex, MutexLike},
 };
@@ -326,12 +327,9 @@ pub struct LogOptions {
     // pub format: FormatOptions,
 }
 
-#[used]
-#[unsafe(link_section = ".limine_requests")]
-pub static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
-
 pub fn init_tty() {
-    if let Some(res) = FRAMEBUFFER_REQUEST.get_response()
+    if get_cmdline().logging.fb.enable
+        && let Some(res) = FRAMEBUFFER_REQUEST.get_response()
         && let Some(ref fb) = res.framebuffers().next()
     {
         FLAN_TERM_BACKEND.call_once(|| FlanTermSink::from_framebuffer(fb));

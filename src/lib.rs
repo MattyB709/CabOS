@@ -57,7 +57,10 @@ use crate::{
     arch::{Arch, ArchTrait},
     cmdline::{get_cmdline_error, get_cmdline_text, parse_kernel_cmdline},
     coroutine::{init_coroutine_executor, init_coroutine_queue},
-    devices::discovery::{create_drivers, discover_devices},
+    devices::{
+        char::limine_framebuffer::register_limine_framebuffer,
+        discovery::{create_drivers, discover_devices},
+    },
     event::init_event_handler,
     fs::{
         dev::{DEV, Dev, register_devices},
@@ -184,8 +187,7 @@ pub fn system_init<Work: KernelWorkTrait>() -> ! {
     kprintln!("First round of device discovery...");
     discover_devices(true);
     kprintln!("Finished first round of device discovery.");
-
-    // registered devices with devfs
+    register_limine_framebuffer();
 
     // note we don't need to do anything special here because rust doesn't have init_array
     // if we wanted once-initialized data, we would either provide our custom mechanism,
