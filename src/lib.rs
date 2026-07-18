@@ -55,7 +55,7 @@ use modules::load_modules_early;
 
 use crate::{
     arch::{Arch, ArchTrait},
-    cmdline::{get_cmdline_error, get_cmdline_text, parse_kernel_cmdline},
+    cmdline::{get_cmdline, get_cmdline_error, get_cmdline_text, parse_kernel_cmdline},
     coroutine::{init_coroutine_executor, init_coroutine_queue},
     devices::{
         char::limine_framebuffer::register_limine_framebuffer,
@@ -187,7 +187,12 @@ pub fn system_init<Work: KernelWorkTrait>() -> ! {
     kprintln!("First round of device discovery...");
     discover_devices(true);
     kprintln!("Finished first round of device discovery.");
-    register_limine_framebuffer();
+
+    // if we aren't using the framebuffer for logging with flanterm, 
+    // register it with /dev
+    if !get_cmdline().logging.fb.enable {
+        register_limine_framebuffer();
+    }
 
     // note we don't need to do anything special here because rust doesn't have init_array
     // if we wanted once-initialized data, we would either provide our custom mechanism,
