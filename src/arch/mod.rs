@@ -118,6 +118,8 @@ pub trait ArchTrait {
     fn create_arch_specific_drivers(
         system_drivers: &mut Vec<Box<dyn DeviceDiscovery + Send + Sync>>,
     );
+    fn get_ticks() -> u64;
+    fn get_tick_frequency() -> u64; // timer frequency in Hz
 
     // sets up the initial stack for a user process and returns the initial stack pointer. Space is the address space the stack should be mapped in
     fn setup_stack(sp: u64, space: u64, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64>;

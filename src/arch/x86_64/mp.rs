@@ -131,8 +131,7 @@ pub unsafe fn initialize_core(cpu: &Cpu) {
     });
 
     {
-        let timer_hz = 500;
-        let initial_count = (apic_freq / timer_hz) as u32;
+        let initial_count = (apic_freq / super::interrupt::TIMER_HZ) as u32;
         apic::setup_timer(TIMER_INTERRUPT, initial_count, true);
     }
 }

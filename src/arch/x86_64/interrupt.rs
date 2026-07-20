@@ -15,12 +15,16 @@ use crate::{
     devices::discovery::acpi::IOAPIC_CPU_TO_LAPIC,
     event::{Event, push_event},
     memory::virtual_memory::PageFaultConditions,
-    mp::CORE_ID,
+    mp::{CORE_ID, core_local},
     sync::{IntMutex, MutexLike},
-    thread::CUR_TLS_ADDR,
+    thread::{CUR_TLS_ADDR, wakeup_sleepers},
 };
 
-static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
+core_local! {
+    TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
+}
+
+pub const TIMER_HZ: u64 = 500;
 
 pub fn timer_ticks() -> u64 {
     TIMER_TICKS.load(Ordering::Relaxed)
@@ -137,6 +141,7 @@ pub mod irq_vector {
 
 pub extern "C" fn timer_interrupt_handler(ctx: &InterruptContext) {
     TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+    wakeup_sleepers();
     apic::eoi();
 
     unsafe { crate::thread::preempt_to_idle(ctx) };

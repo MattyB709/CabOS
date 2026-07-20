@@ -218,6 +218,14 @@ impl ArchTrait for Arch {
     fn init_tty(_cell: &Once<Box<dyn CharSink>>) {
         // no op for aarch64, serial is implemented via uart_pl011 so devices must be parsed
     }
+
+    fn get_ticks() -> u64 {
+        gic::timer_ticks()
+    }
+
+    fn get_tick_frequency() -> u64 {
+        gic::TIMER_HZ
+    }
 }
 
 #[derive(Clone, Copy)]

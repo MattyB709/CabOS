@@ -9,7 +9,7 @@ use crate::{
     memory::virtual_memory::{PageFaultConditions, handle_page_fault},
     mp::{CORE_ID, CoreId, core_local},
     sync::{IntSpinLock, MutexLike},
-    syscall::{numbers::number, syscall_handler},
+    syscall::syscall_handler,
     thread::{
         CONTEXT, CORE_PINNED_TO, CUR_EVENT, LOCAL_WORK_QUEUE, PINNED_TO_CORE, Thread, ThreadQueue,
         make_thread, new_thread_queue, schedule_thread, this_thread, yield_thread,
@@ -95,11 +95,12 @@ pub fn init_event_handler() {
                     Syscall => {
                         // Handle syscall event
                         let mut context = CONTEXT.read_for(&thread).lock();
-                        let num = syscall_handler(&thread, &mut *context);
+                        let should_block = syscall_handler(&thread, &mut *context);
                         drop(context);
 
-                        if num == number::EXIT {
-                            // If the syscall was exit, we don't want to reschedule the thread
+                        if should_block {
+                            // Exit and successful nanosleep calls leave their thread off the
+                            // runnable queue.
                             continue;
                         }
                         schedule_thread(thread);

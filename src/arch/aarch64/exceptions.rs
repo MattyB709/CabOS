@@ -10,7 +10,7 @@ use crate::{
     memory::virtual_memory::PageFaultConditions,
     mp::CORE_ID,
     print::kprintln,
-    thread::{block_to_idle, preempt_to_idle},
+    thread::{block_to_idle, preempt_to_idle, wakeup_sleepers},
 };
 
 global_asm!(include_str!("exception.s"));
@@ -151,6 +151,8 @@ fn timer_interrupt_handler(e: &mut ExceptionContext) {
         spsr: e.spsr_el1,
         tpidr_el0: e.tpidr_el0,
     };
+
+    wakeup_sleepers();
 
     gic::eoi(30);
     unsafe {

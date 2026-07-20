@@ -59,7 +59,7 @@ pub trait SyscallContext {
     }
 }
 
-pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u64 {
+pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> bool {
     let num = ctx.syscall_number();
     let proc = thread.process.get().unwrap();
     let pid = proc.get_pid();
@@ -110,8 +110,16 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u
         number::UNLINKAT => {
             ctx.set_return_value(sys_unlinkat(thread, ctx));
         }
+        number::NANOSLEEP => match sys_nanosleep(thread, ctx) {
+            Ok(()) => {
+                ctx.set_return_value(0);
+                return true;
+            }
+            Err(err) => ctx.set_return_value(err),
+        },
         number::EXIT => {
             ctx.set_return_value(sys_exit(thread, ctx));
+            return true;
         }
         number::GETPID => {
             ctx.set_return_value(sys_getpid(thread, ctx));
@@ -182,5 +190,5 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> u
 
         _ => panic!("SYSCALL {} UNIMPLEMENTED", num),
     }
-    num
+    false
 }

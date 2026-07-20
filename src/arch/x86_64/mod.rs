@@ -209,6 +209,14 @@ impl ArchTrait for Arch {
     fn init_tty(cell: &Once<Box<dyn CharSink>>) {
         cell.call_once(|| Box::new(SerialCharSink::open(0x3f8)));
     }
+
+    fn get_tick_frequency() -> u64 {
+        interrupt::TIMER_HZ
+    }
+
+    fn get_ticks() -> u64 {
+        interrupt::timer_ticks()
+    }
 }
 
 #[derive(Clone, Copy)]
