@@ -13,12 +13,14 @@ use crate::{
         block::{BlockDevice, BlockDeviceError, PhysicalAddressSize},
         virtio::VirtioHal,
     },
+    sync::{IntMutex, MutexLike},
 };
 
 // Wrapper around the virtio blk driver containing the necessary HAL
 // implementation for it to work with our system block device trait.
 pub struct VirtIOBlkDiskDriver<H: Hal, T: Transport> {
-    blk: VirtIOBlk<H, T>,
+    blk: IntMutex<VirtIOBlk<H, T>>,
+    capacity: usize, // in sectors
 }
 
 // TODO: VERIFY THAT THIS IS THE CASE
@@ -27,27 +29,32 @@ unsafe impl<H: Hal, T: Transport> Sync for VirtIOBlkDiskDriver<H, T> {}
 
 impl<T: Transport> VirtIOBlkDiskDriver<VirtioHal, T> {
     pub fn new(transport: T) -> Self {
+        let virtio_blk = VirtIOBlk::<VirtioHal, T>::new(transport)
+            .expect("failed to initialize virtio blk device");
+        let capacity = virtio_blk.capacity();
         Self {
-            blk: VirtIOBlk::<VirtioHal, T>::new(transport)
-                .expect("failed to initialize virtio blk device"),
+            blk: IntMutex::new(virtio_blk),
+            capacity: capacity as usize,
         }
     }
 
-    fn read_block(&mut self, block_idx: usize, buffer: &mut [u8]) -> Result<(), BlockDeviceError> {
+    fn read_block(&self, block_idx: usize, buffer: &mut [u8]) -> Result<(), BlockDeviceError> {
         check_buffer_size(buffer, self.block_size())?;
         let sectors_per_block = self.block_size() / SECTOR_SIZE;
         let sector_idx = block_idx * sectors_per_block;
         self.blk
+            .lock()
             .read_blocks(sector_idx, buffer)
             .map_err(|_| BlockDeviceError::ReadError)?;
         Ok(())
     }
 
-    fn write_block(&mut self, block_idx: usize, buffer: &[u8]) -> Result<(), BlockDeviceError> {
+    fn write_block(&self, block_idx: usize, buffer: &[u8]) -> Result<(), BlockDeviceError> {
         check_buffer_size(buffer, self.block_size())?;
         let sectors_per_block = self.block_size() / SECTOR_SIZE;
         let sector_idx = block_idx * sectors_per_block;
         self.blk
+            .lock()
             .write_blocks(sector_idx, buffer)
             .map_err(|_| BlockDeviceError::WriteError)?;
         Ok(())
@@ -55,12 +62,8 @@ impl<T: Transport> VirtIOBlkDiskDriver<VirtioHal, T> {
 }
 
 impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
-    fn name(&self) -> &str {
-        "virtio_blk"
-    }
-
     fn read_blocks(
-        &mut self,
+        &self,
         block_idxs: &[usize],
         buffers: &mut [&mut [u8]],
     ) -> Result<(), BlockDeviceError> {
@@ -79,7 +82,7 @@ impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
     }
 
     fn write_blocks(
-        &mut self,
+        &self,
         block_idxs: &[usize],
         buffers: &[&[u8]],
     ) -> Result<(), BlockDeviceError> {
@@ -97,8 +100,9 @@ impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
         Ok(())
     }
 
-    fn flush(&mut self) -> Result<(), BlockDeviceError> {
+    fn flush(&self) -> Result<(), BlockDeviceError> {
         self.blk
+            .lock()
             .flush()
             .map_err(|_| BlockDeviceError::Other("flush failed".into()))?;
         Ok(())
@@ -109,7 +113,7 @@ impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
     }
 
     fn block_count(&self) -> usize {
-        (self.blk.capacity() as usize * SECTOR_SIZE) / self.block_size()
+        (self.capacity * SECTOR_SIZE) / self.block_size()
     }
 
     fn dma_physical_address_size(&self) -> PhysicalAddressSize {
@@ -119,8 +123,16 @@ impl<T: Transport> BlockDevice for VirtIOBlkDiskDriver<VirtioHal, T> {
 
 impl<T: Transport> Device for VirtIOBlkDiskDriver<VirtioHal, T> {
     #[allow(unused_variables)]
-    fn ioctl(&self, request: u64, arg1: u64, arg2: u64) -> u64 {
+    fn ioctl(&self, request: u64, arg: u64) -> u64 {
         0
+    }
+
+    fn name(&self) -> &'static str {
+        "virtio_blk"
+    }
+
+    fn requested_devfs_name(&self) -> Option<&'static str> {
+        Some("disk")
     }
 }
 

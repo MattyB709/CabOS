@@ -2,7 +2,7 @@ pub mod acpi;
 pub mod device_tree;
 pub mod pcie;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::marker::{Send, Sync};
 
 use fdt::node::FdtNode;
@@ -20,13 +20,13 @@ use crate::{
 };
 
 // lists of initialized devices in the system
-pub static BLOCK_DEVICES: IntMutex<Vec<Box<dyn BlockDevice + Send + Sync>>> =
+pub static BLOCK_DEVICES: IntMutex<Vec<Arc<dyn BlockDevice + Send + Sync>>> =
     IntMutex::new(Vec::new());
 
-pub static CHAR_DEVICES: IntMutex<Vec<Box<dyn CharDevice + Send + Sync>>> =
+pub static CHAR_DEVICES: IntMutex<Vec<Arc<dyn CharDevice + Send + Sync>>> =
     IntMutex::new(Vec::new());
 
-pub static NETWORK_DEVICES: IntMutex<Vec<Box<dyn NetworkDevice + Send + Sync>>> =
+pub static NETWORK_DEVICES: IntMutex<Vec<Arc<dyn NetworkDevice + Send + Sync>>> =
     IntMutex::new(Vec::new());
 
 /// all implemented discovery drivers in the system.
@@ -45,9 +45,9 @@ pub enum DeviceNode<'a, 'b> {
 }
 
 pub enum DeviceType {
-    Block(Box<dyn BlockDevice + Send + Sync>),
-    Char(Box<dyn CharDevice + Send + Sync>),
-    Network(Box<dyn NetworkDevice + Send + Sync>),
+    Block(Arc<dyn BlockDevice + Send + Sync>),
+    Char(Arc<dyn CharDevice + Send + Sync>),
+    Network(Arc<dyn NetworkDevice + Send + Sync>),
     Special, // these are special drivers that interop directly with the system and don't return anything.
 }
 

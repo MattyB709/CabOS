@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 
 use crate::{
-    fs::vfs::{FsError, INodeType, VNode},
+    fs::vfs::{FsError, VNode},
     sync::{IntMutex, MutexLike},
 };
 
@@ -38,7 +38,7 @@ impl File {
     }
 
     pub fn seek(&self, offset: i64, whence: i32) -> Result<usize, FsError> {
-        if self.vnode.get_type() != INodeType::File {
+        if !self.vnode.seekable() {
             return Err(FsError::InvalidOperation);
         }
 
@@ -60,5 +60,9 @@ impl File {
 
         *current = new_offset as usize;
         Ok(*current)
+    }
+
+    pub fn ioctl(&self, request: u64, arg: u64) -> Result<u64, FsError> {
+        self.vnode.ioctl(request, arg)
     }
 }

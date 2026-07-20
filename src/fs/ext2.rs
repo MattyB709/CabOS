@@ -1,6 +1,5 @@
 extern crate alloc;
 use alloc::{
-    boxed::Box,
     sync::{Arc, Weak},
     vec::Vec,
 };
@@ -18,7 +17,7 @@ use crate::{
 
 pub struct Ext2 {
     block_size: usize,
-    block_device: IntMutex<Box<dyn BlockDevice + Send + Sync>>,
+    block_device: Arc<dyn BlockDevice + Send + Sync>,
     superblock: Superblock,
     block_map_lock: IntMutex<()>,
     inode_map_lock: IntMutex<()>,
@@ -461,13 +460,11 @@ impl Ext2 {
     }
 
     pub fn new_from_block_devices(
-        block_devices: &mut Vec<Box<dyn BlockDevice + Send + Sync>>,
+        block_devices: &mut Vec<Arc<dyn BlockDevice + Send + Sync>>,
     ) -> Result<Arc<Self>, FsError> {
         // this stores the found superblock for initialization and index of the block device that contains
         // it for removal
-        let mut found = None;
-
-        for (i, block_device) in block_devices.iter_mut().enumerate() {
+        for block_device in block_devices.iter() {
             const SUPERBLOCK_START: usize = 1024;
             const SUPERBLOCK_SIZE: usize = 1024;
             let mut buf = [0u8; SUPERBLOCK_SIZE];
@@ -480,37 +477,30 @@ impl Ext2 {
                 && superblock.log_block_size <= 2
                 && superblock.rev_level == 1
             {
-                found = Some((superblock, i));
-                break;
+                let ext2 = Arc::new(Self {
+                    block_size: 1024 << superblock.log_block_size,
+                    block_device: block_device.clone(),
+                    superblock,
+                    block_map_lock: IntMutex::new(()),
+                    inode_map_lock: IntMutex::new(()),
+                    group_lock: IntMutex::new(()),
+                    vfs_id: IntMutex::new(None),
+                    self_ref: Once::new(),
+                });
+                ext2.self_ref.call_once(|| Arc::downgrade(&ext2));
+                return Ok(ext2);
             }
         }
 
-        if let Some((superblock, i)) = found {
-            let ext2 = Arc::new(Self {
-                block_size: 1024 << superblock.log_block_size,
-                block_device: IntMutex::new(block_devices.swap_remove(i)),
-                superblock,
-                block_map_lock: IntMutex::new(()),
-                inode_map_lock: IntMutex::new(()),
-                group_lock: IntMutex::new(()),
-                vfs_id: IntMutex::new(None),
-                self_ref: Once::new(),
-            });
-            ext2.self_ref.call_once(|| Arc::downgrade(&ext2));
-            Ok(ext2)
-        } else {
-            Err(FsError::NotFound)
-        }
+        Err(FsError::NotFound)
     }
 
     fn read_block(&self, block_number: usize, buffer: &mut [u8]) -> Result<(), FsError> {
         self.check_block_inputs(block_number, buffer.len())?;
 
-        let mut block_device = self.block_device.lock();
-
         // read a block into the buffer, returning an error if the read fails or doesn't return a full block. Use read to not have
         // to deal with different block sizes
-        if let Ok(bytes_read) = block_device.read(
+        if let Ok(bytes_read) = self.block_device.read(
             block_number * self.block_size,
             &mut buffer[0..self.block_size],
         ) && bytes_read == self.block_size
@@ -523,11 +513,10 @@ impl Ext2 {
     fn write_block(&self, block_number: usize, buffer: &[u8]) -> Result<(), FsError> {
         self.check_block_inputs(block_number, buffer.len())?;
 
-        let mut block_device = self.block_device.lock();
-
         // same as above
-        if let Ok(bytes_written) =
-            block_device.write(block_number * self.block_size, &buffer[0..self.block_size])
+        if let Ok(bytes_written) = self
+            .block_device
+            .write(block_number * self.block_size, &buffer[0..self.block_size])
             && bytes_written == self.block_size
         {
             return Ok(());
@@ -1093,6 +1082,7 @@ impl VNode for FNode {
             INodeType::Directory => 2,
             INodeType::File => 1,
             INodeType::Other => 0,
+            _ => return Err(FsError::InvalidInput),
         };
         self.create_entry(target, inumber as u32, file_type)
     }

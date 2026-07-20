@@ -19,29 +19,25 @@ pub enum PhysicalAddressSize {
 }
 
 pub trait BlockDevice: Device {
-    fn name(&self) -> &str;
     fn block_size(&self) -> usize;
     fn block_count(&self) -> usize;
 
     // This keeps the lower-level interface allocation-free for callers while
     // still allowing drivers to batch whole-block transfers efficiently.
     fn read_blocks(
-        &mut self,
+        &self,
         block_idxs: &[usize],
         buffers: &mut [&mut [u8]],
     ) -> Result<(), BlockDeviceError>;
 
-    fn write_blocks(
-        &mut self,
-        block_idxs: &[usize],
-        buffers: &[&[u8]],
-    ) -> Result<(), BlockDeviceError>;
+    fn write_blocks(&self, block_idxs: &[usize], buffers: &[&[u8]])
+    -> Result<(), BlockDeviceError>;
 
-    fn flush(&mut self) -> Result<(), BlockDeviceError>;
+    fn flush(&self) -> Result<(), BlockDeviceError>;
     fn dma_physical_address_size(&self) -> PhysicalAddressSize;
 
     // read starting from some byte offset until buffer is full
-    fn read(&mut self, byte_offset: usize, buffer: &mut [u8]) -> Result<usize, BlockDeviceError> {
+    fn read(&self, byte_offset: usize, buffer: &mut [u8]) -> Result<usize, BlockDeviceError> {
         let block_size = self.block_size();
         if block_size == 0 {
             return Err(BlockDeviceError::Other("block size cannot be zero".into()));
@@ -111,7 +107,7 @@ pub trait BlockDevice: Device {
         Ok(total_read)
     }
 
-    fn write(&mut self, byte_offset: usize, buffer: &[u8]) -> Result<usize, BlockDeviceError> {
+    fn write(&self, byte_offset: usize, buffer: &[u8]) -> Result<usize, BlockDeviceError> {
         let block_size = self.block_size();
         if block_size == 0 {
             return Err(BlockDeviceError::Other("block size cannot be zero".into()));

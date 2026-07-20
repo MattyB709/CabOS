@@ -55,12 +55,15 @@ use modules::load_modules_early;
 
 use crate::{
     arch::{Arch, ArchTrait},
-    cmdline::{get_cmdline_error, get_cmdline_text, parse_kernel_cmdline},
+    cmdline::{get_cmdline, get_cmdline_error, get_cmdline_text, parse_kernel_cmdline},
     coroutine::{init_coroutine_executor, init_coroutine_queue},
-    devices::discovery::{create_drivers, discover_devices},
+    devices::{
+        char::limine_framebuffer::register_limine_framebuffer,
+        discovery::{create_drivers, discover_devices},
+    },
     event::init_event_handler,
     fs::{
-        dev::{DEV, Dev},
+        dev::{DEV, Dev, register_devices},
         fake::{FAKE, Fake},
         vfs::VFS,
     },
@@ -185,6 +188,12 @@ pub fn system_init<Work: KernelWorkTrait>() -> ! {
     discover_devices(true);
     kprintln!("Finished first round of device discovery.");
 
+    // if we aren't using the framebuffer for logging with flanterm, 
+    // register it with /dev
+    if !get_cmdline().logging.fb.enable {
+        register_limine_framebuffer();
+    }
+
     // note we don't need to do anything special here because rust doesn't have init_array
     // if we wanted once-initialized data, we would either provide our custom mechanism,
     // or just spam OnceCell
@@ -298,6 +307,8 @@ unsafe extern "C" fn core_init<Work: KernelWorkTrait>(cpu: &Cpu) -> ! {
         kprintln!("Starting second round of device discovery...");
         discover_devices(false);
         kprintln!("Finished second round of device discovery.");
+        register_devices();
+        kprintln!("Registered devices with devfs");
     });
     one!({
         spawn_thread(move || {

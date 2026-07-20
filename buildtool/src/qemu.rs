@@ -71,6 +71,10 @@ pub fn run(
         Target::X86_64 => "virtio-net,netdev=net0".into(),
         Target::Aarch64 => "virtio-net-device,netdev=net0".into(),
     });
+    if matches!(target, Target::Aarch64) {
+        args.push("-device".into());
+        args.push("virtio-keyboard-device".into());
+    }
     args.push("-netdev".into());
     args.push("user,id=net0".into());
 

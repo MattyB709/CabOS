@@ -22,12 +22,6 @@ pub enum FsError {
     Other(String),
 }
 
-// Shim between the different variants of devices and the VFS
-pub trait VFSDevice: Send + Sync {
-    fn read_unaligned(&self, offset: usize, buffer: &mut [u8]) -> Result<usize, FsError>;
-    fn write_unaligned(&self, offset: usize, buffer: &[u8]) -> Result<usize, FsError>;
-}
-
 pub struct VFS {
     filesystems: IntMutex<BTreeMap<usize, Arc<dyn Filesystem>>>,
     inode_cache: IntMutex<INodeCache>,
@@ -202,7 +196,9 @@ pub trait Filesystem: Send + Sync {
 pub enum INodeType {
     File,
     Directory,
-    // symlink or device, probably
+    Char,
+    Block,
+    // symlink possibly
     Other,
 }
 
@@ -242,11 +238,6 @@ pub trait VNode: Send + Sync {
         Err(FsError::NotImplemented)
     }
 
-    // should only be implemented for devices
-    fn set_device(&self, _: Arc<dyn VFSDevice>) -> Result<(), FsError> {
-        Err(FsError::NotImplemented)
-    }
-
     // file size, can be undefined
     fn size(&self) -> usize {
         0
@@ -266,6 +257,15 @@ pub trait VNode: Send + Sync {
     // whatever fs it's on. Maybe this could be done differently.
     fn get_inode_key(&self) -> Result<INodeKey, FsError> {
         Err(FsError::NotImplemented)
+    }
+
+    fn ioctl(&self, _request: u64, _arg: u64) -> Result<u64, FsError> {
+        Err(FsError::NotImplemented)
+    }
+
+    // this is overridden for special filesystems that have more complicated seek semantics, like /dev
+    fn seekable(&self) -> bool {
+        matches!(self.get_type(), INodeType::File | INodeType::Block)
     }
     // Symlink
     // fn traverse() -> str

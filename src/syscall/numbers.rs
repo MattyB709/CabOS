@@ -1,5 +1,6 @@
 #[cfg(target_arch = "aarch64")]
 pub mod number {
+    pub const IOCTL: u64 = 29;
     pub const MKDIRAT: u64 = 34;
     pub const UNLINKAT: u64 = 35;
     pub const FACCESSAT: u64 = 48;
@@ -23,6 +24,7 @@ pub mod number {
 pub mod number {
     pub const READ: u64 = 0;
     pub const WRITE: u64 = 1;
+    pub const IOCTL: u64 = 16;
     pub const OPEN: u64 = 2;
     pub const CLOSE: u64 = 3;
     pub const STAT: u64 = 4;
@@ -70,6 +72,7 @@ pub fn syscall_name(num: u64) -> &'static str {
     match num {
         number::READ => "read",
         number::WRITE => "write",
+        number::IOCTL => "ioctl",
         number::OPENAT => "openat",
         number::CLOSE => "close",
         number::LSEEK => "lseek",

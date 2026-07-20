@@ -191,7 +191,7 @@ impl VNode for RamInode {
             INodeType::Directory => RamInodeKind::Dir {
                 entries: IntMutex::new(BTreeMap::new()),
             },
-            INodeType::Other => return Err(FsError::InvalidOperation),
+            _ => return Err(FsError::InvalidOperation),
         };
         let inode = fs.alloc_inode(new_kind);
         self.add_entry(name, inode.number, inode_type)?;

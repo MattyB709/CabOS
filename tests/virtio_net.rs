@@ -9,7 +9,7 @@ kernel_common::integration_test!({
 
     use kernel_common::{devices::discovery::NETWORK_DEVICES, print::kprintln, sync::MutexLike};
 
-    let mut virtio_net_device = {
+    let virtio_net_device = {
         let mut network_devices = NETWORK_DEVICES.lock();
         let idx = network_devices
             .iter()
