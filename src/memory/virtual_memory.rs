@@ -15,6 +15,7 @@ use crate::{
     print::kprintln,
     state::{CorePin, StateGuard},
     thread::Thread,
+    process::Process,
 };
 
 bitflags! {
@@ -148,15 +149,18 @@ pub fn init_virtual_memory_allocator() {
     );
 }
 
-pub fn handle_page_fault(cause: PageFaultConditions, address: usize, thread: &Arc<Thread>) {
+pub fn handle_page_fault(cause: PageFaultConditions, address: usize, process: Option<&Arc<Process>>) {
     if address < USERSPACE_END {
-        if let Some(process) = thread.process.get() {
-            process
+        if let Some(proc) = process {
+            proc
                 .virtual_memory
                 .handle_page_fault(cause, address)
                 .unwrap(); // TODO this will allow processes to break the kernel if they case bad faults
         } else {
-            panic!("*** PAGE FAULT AT {:x} when no process exists ***", address);
+            panic!(
+                "page fault at {:x} in user space with no process context",
+                address
+            );
         }
         return;
     }
@@ -216,10 +220,16 @@ pub fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), &s
     Ok(())
 }
 
-pub fn copy_from_user(space: u64, mut src: u64, mut bytes: &mut [u8]) -> Result<(), &str> {
+pub fn copy_from_user(process: &Arc<Process>, mut src: u64, mut bytes: &mut [u8]) -> Result<(), &'static str> {
+    let space = process.get_address_space();
     while !bytes.is_empty() {
-        let kva =
-            phys_to_virt(Arch::get_phys_addr(src, space).ok_or("Failed to get physical address")?);
+            let phys_addr_opt = Arch::get_phys_addr(src, space);
+            if phys_addr_opt.is_none() {
+                let cause = PageFaultConditions::USER;
+                handle_page_fault(cause, src as usize, Some(process));
+            }
+            let phys_addr = Arch::get_phys_addr(src, space).ok_or("Failed to get physical address")?;
+            let kva = phys_to_virt(phys_addr);
         let page_left = Arch::PAGE_SIZE - (src as usize % Arch::PAGE_SIZE);
         let bytes_left = bytes.len();
         let to_copy = core::cmp::min(page_left, bytes_left);

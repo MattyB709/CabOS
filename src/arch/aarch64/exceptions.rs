@@ -130,6 +130,13 @@ fn page_fault_handler(e: &mut ExceptionContext, exception_class: u64) {
             tpidr_el0: e.tpidr_el0,
         };
 
+        // kprintln!(
+        //     "Page fault at address {:#018x} with context {} on core {}",
+        //     far_el1,
+        //     e,
+        //     CORE_ID.get()
+        // );
+
         unsafe {
             block_to_idle(&interrupt_context);
         }

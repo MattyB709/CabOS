@@ -89,7 +89,7 @@ pub fn init_event_handler() {
                         //     thread.tid(),
                         //     address
                         // );
-                        handle_page_fault(cause, address, &thread);
+                        handle_page_fault(cause, address, thread.process.get());
                         schedule_thread(thread);
                     }
                     Syscall => {

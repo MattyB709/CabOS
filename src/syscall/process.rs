@@ -44,7 +44,7 @@ pub fn sys_nanosleep(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> Result<
     // get the timespec struct sent by nanosleep
     let mut bytes = [0_u8; size_of::<[u64; 2]>()];
     if copy_from_user(
-        thread.process.get().unwrap().get_address_space(),
+        thread.process.get().unwrap(),
         req,
         &mut bytes,
     )

@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 
 use crate::{
+    print::kprintln,
     fs::vfs::{FsError, VNode},
     sync::{IntMutex, MutexLike},
 };
@@ -39,6 +40,7 @@ impl File {
 
     pub fn seek(&self, offset: i64, whence: i32) -> Result<usize, FsError> {
         if !self.vnode.seekable() {
+            kprintln!("File is not seekable");
             return Err(FsError::InvalidOperation);
         }
 
@@ -47,9 +49,9 @@ impl File {
             SEEK_SET => 0i128,
             SEEK_CUR => *current as i128,
             SEEK_END => self.vnode.size() as i128,
-            _ => return Err(FsError::InvalidInput),
+            _ => {
+                return Err(FsError::InvalidInput)},
         };
-
         let new_offset = base
             .checked_add(offset as i128)
             .ok_or(FsError::InvalidInput)?;

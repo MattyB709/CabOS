@@ -87,7 +87,7 @@ impl Device for LimineFramebuffer<'_> {
     }
 
     fn requested_devfs_name(&self) -> Option<&'static str> {
-        Some("fb0")
+        Some("fb")
     }
 }
 

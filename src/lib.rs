@@ -32,7 +32,7 @@ pub mod sync;
 pub mod syscall;
 pub mod thread;
 extern crate alloc;
-use alloc::sync::Arc;
+use alloc::{vec, sync::Arc};
 use core::{
     hint::spin_loop,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -59,20 +59,24 @@ use crate::{
     coroutine::{init_coroutine_executor, init_coroutine_queue},
     devices::{
         char::limine_framebuffer::register_limine_framebuffer,
-        discovery::{create_drivers, discover_devices},
+        discovery::{BLOCK_DEVICES, create_drivers, discover_devices},
     },
+    process::Process,
+    elf::ElfLoader,
     event::init_event_handler,
     fs::{
         dev::{DEV, Dev, register_devices},
         fake::{FAKE, Fake},
         vfs::VFS,
+        ext2::Ext2,
     },
     memory::{heap::init_malloc, virtual_memory_2::VirtualMemory},
     mp::{CORE_ID, MP_STAGE, MPStage, init_cpu_local_table},
     print::{StackTrace, init_tty, kprintln},
     process::init_pid_allocator,
     state::{Irq, StateTrait},
-    thread::{poll_tasks, set_up_idle, spawn_thread},
+    thread::{poll_tasks, set_up_idle, spawn_thread, spawn_user_thread},
+    sync::MutexLike,
 };
 
 // some sample limine requests, for no particular reason
@@ -106,6 +110,28 @@ pub trait KernelWorkTrait {
 
 fn usual_main() {
     kprintln!("Entered kernel");
+    let mut block_devices = BLOCK_DEVICES.lock();
+    let ext2 = Ext2::new_from_block_devices(&mut block_devices)
+        .expect("ext2 filesystem not found on attached block devices");
+    drop(block_devices);
+    VFS.mount(ext2.clone(), &["/"]).expect("failed to mount ext2 filesystem");
+    let process = Process::new().expect("failed to create process");
+    let root = VFS.get_root().expect("failed to get vfs node");
+    let node = root.lookup("doomgeneric-cabos").unwrap();
+    let start_address = ElfLoader::load(node, &process).expect("Failed to load ELF file.");
+    let stack = process
+        .virtual_memory
+        .mmap(None, 4096 * 4, false, None)
+        .unwrap();
+    let space = process.get_address_space();
+    let argc = 3;
+    let argv = vec!["doomgeneric-cabos", "-iwad", "./DOOM1.WAD"];
+    let new_stack = Arch::setup_stack((stack + 4096 * 4) as u64, space, argc, &argv, &[]).expect("Failed to set up stack.");
+    spawn_user_thread(
+        &process,
+        start_address as usize,
+        (new_stack) as usize,
+    );
     loop {}
 }
 
@@ -117,6 +143,7 @@ impl KernelWorkTrait for KernelWork {
         test_main();
         #[cfg(not(test))]
         usual_main();
+        
     }
 }
 

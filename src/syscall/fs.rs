@@ -7,8 +7,8 @@ use crate::{
         file::File,
         vfs::{FsError, INodeType, VFS},
     },
-    memory::virtual_memory::copy_from_user,
-    print::kprint,
+    memory::virtual_memory::{copy_from_user, copy_to_user},
+    print::{kprint, kprintln},
     sync::MutexLike,
     thread::Thread,
 };
@@ -29,54 +29,42 @@ fn errno(code: i32) -> u64 {
 }
 
 const MAX_USER_STRING_LEN: usize = 4096;
-const USER_STRING_COPY_CHUNK: usize = 256;
 
 pub fn read_user_string(
     ptr: u64,
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> Result<String, &'static str> {
-    if !ctx.is_user_address(ptr) {
-        return Err("Invalid address");
-    }
+    let process = thread.process.get().expect("Function should only be called from process context");
+     let mut result = Vec::new();
 
-    let address_space = thread.process.get().unwrap().get_address_space();
-    let mut bytes = Vec::new();
-
-    while bytes.len() < MAX_USER_STRING_LEN {
+     while result.len() < MAX_USER_STRING_LEN {
         let addr = ptr
-            .checked_add(bytes.len() as u64)
-            .ok_or("Address overflow during string read")?;
-        if !ctx.is_user_address(addr) {
-            return Err("Invalid address during string read");
-        }
+             .checked_add(result.len() as u64)
+             .ok_or("User string address overflow")?;
 
-        let page_left = Arch::PAGE_SIZE - (addr as usize % Arch::PAGE_SIZE);
-        let to_copy = core::cmp::min(
-            MAX_USER_STRING_LEN - bytes.len(),
-            core::cmp::min(USER_STRING_COPY_CHUNK, page_left),
-        );
+         if !ctx.is_user_address(addr) {
+             return Err("Invalid address");
+         }
 
-        let end_addr = addr
-            .checked_add((to_copy - 1) as u64)
-            .ok_or("Address overflow during string read")?;
-        if !ctx.is_user_address(end_addr) {
-            return Err("Invalid address during string read");
-        }
+         let page_left = Arch::PAGE_SIZE - (addr as usize % Arch::PAGE_SIZE);
+         let count = core::cmp::min(page_left, MAX_USER_STRING_LEN -
+         result.len());
+         let mut chunk = vec![0u8; count];
 
-        let mut chunk = [0u8; USER_STRING_COPY_CHUNK];
-        copy_from_user(address_space, addr, &mut chunk[..to_copy])
-            .map_err(|_| "Failed to copy user string")?;
+         copy_from_user(process, addr, &mut chunk)
+             .map_err(|_| "Failed to copy from user")?;
 
-        if let Some(nul_pos) = chunk[..to_copy].iter().position(|&byte| byte == 0) {
-            bytes.extend_from_slice(&chunk[..nul_pos]);
-            return String::from_utf8(bytes).map_err(|_| "User string was not valid UTF-8");
-        }
+         if let Some(nul) = chunk.iter().position(|&b| b == 0) {
+             result.extend_from_slice(&chunk[..nul]);
+             return String::from_utf8(result)
+                 .map_err(|_| "User string was not valid UTF-8");
+         }
 
-        bytes.extend_from_slice(&chunk[..to_copy]);
-    }
+         result.extend_from_slice(&chunk);
+     }
 
-    Err("String too long")
+     Err("User string was not null-terminated")
 }
 
 // ABI Decoder Layer
@@ -142,19 +130,20 @@ pub fn do_sys_read(
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> u64 {
-    let fd_table = thread.process.get().unwrap().fd_table.lock();
-    if let Some(file) = fd_table.get(&(fd as i32)) {
-        if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1))
-        {
-            return -1i64 as u64;
-        }
-        let buf = unsafe { core::slice::from_raw_parts_mut(buf_ptr as *mut u8, count as usize) };
-        match file.read(buf) {
-            Ok(n) => n as u64,
-            Err(_) => -1i64 as u64,
-        }
-    } else {
+    let mut buf = vec![0u8; count as usize];
+    if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1)) {
         -1i64 as u64
+    } else {
+        let address_space = thread.process.get().unwrap().get_address_space();
+        let fd_table = thread.process.get().unwrap().fd_table.lock();
+        if let Some(file) = fd_table.get(&(fd as i32)) {
+            match file.read(&mut buf) {
+                Ok(n) if copy_to_user(address_space, buf_ptr, &buf[..n]).is_ok() => n as u64,
+                _ => -1i64 as u64,
+            }
+        } else {
+            -1i64 as u64
+        }
     }
 }
 
@@ -167,7 +156,7 @@ pub fn do_sys_write(
 ) -> u64 {
     let mut buf = vec![0u8; count as usize];
     let result = copy_from_user(
-        thread.process.get().unwrap().get_address_space(),
+        thread.process.get().unwrap(),
         buf_ptr,
         &mut buf,
     );
@@ -211,7 +200,8 @@ pub fn do_sys_openat(
 ) -> u64 {
     let pathname = match read_user_string(pathname_ptr, thread, ctx) {
         Ok(s) => s,
-        Err(_) => {
+        Err(s) => {
+            kprintln!("{}", s);
             return -1i64 as u64;
         }
     };
@@ -232,6 +222,7 @@ pub fn do_sys_openat(
         match fd_table.get(&dirfd) {
             Some(file) => file.vnode.clone(),
             None => {
+                kprintln!("Invalid dirfd: {}", dirfd);
                 return -1i64 as u64;
             }
         }
@@ -253,9 +244,11 @@ pub fn do_sys_openat(
     }
 
     for &comp in &components[..components.len() - 1] {
+        kprintln!("Looking up component: {}", comp);
         match current.lookup(comp) {
             Ok(next) => current = next,
-            Err(_) => {
+            Err(err) => {
+                kprintln!("err: {:?}", err);
                 return -1i64 as u64;
             }
         }
@@ -332,6 +325,7 @@ pub fn do_sys_lseek(fd: i32, offset: i64, whence: i32, thread: &Arc<Thread>) -> 
         return errno(ESPIPE);
     }
 
+    kprintln!("Seeking file descriptor {}: offset: {} whence: {}", fd, offset, whence);
     let file = {
         let fd_table = thread.process.get().unwrap().fd_table.lock();
         let Some(file) = fd_table.get(&fd) else {
@@ -340,9 +334,13 @@ pub fn do_sys_lseek(fd: i32, offset: i64, whence: i32, thread: &Arc<Thread>) -> 
         Arc::clone(file)
     };
 
-    match file.seek(offset, whence) {
+    let res = file.seek(offset, whence); 
+    if res.is_err() {
+        kprintln!("Error seeking file descriptor {}: offset: {} whence: {} {:?}", fd, offset, whence, res);
+    }
+    match res {
         Ok(new_offset) => new_offset as u64,
-        Err(FsError::InvalidInput | FsError::InvalidOperation) => errno(EINVAL),
+        Err(FsError::InvalidInput | FsError::InvalidOperation) => {errno(EINVAL)},
         Err(_) => errno(EINVAL),
     }
 }
