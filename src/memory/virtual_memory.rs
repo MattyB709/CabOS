@@ -13,9 +13,8 @@ use crate::{
         virtual_memory_2::USERSPACE_END,
     },
     print::kprintln,
-    state::{CorePin, StateGuard},
-    thread::Thread,
     process::Process,
+    state::{CorePin, StateGuard},
 };
 
 bitflags! {
@@ -149,11 +148,14 @@ pub fn init_virtual_memory_allocator() {
     );
 }
 
-pub fn handle_page_fault(cause: PageFaultConditions, address: usize, process: Option<&Arc<Process>>) {
+pub fn handle_page_fault(
+    cause: PageFaultConditions,
+    address: usize,
+    process: Option<&Arc<Process>>,
+) {
     if address < USERSPACE_END {
         if let Some(proc) = process {
-            proc
-                .virtual_memory
+            proc.virtual_memory
                 .handle_page_fault(cause, address)
                 .unwrap(); // TODO this will allow processes to break the kernel if they case bad faults
         } else {
@@ -203,11 +205,20 @@ pub fn phys_to_virt(paddr: u64) -> u64 {
     paddr + *HHDM_OFFSET.get().expect("HHDM_OFFSET not set") as u64
 }
 
-pub fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), &str> {
+pub fn copy_to_user(
+    process: &Arc<Process>,
+    mut dst: u64,
+    mut bytes: &[u8],
+) -> Result<(), &'static str> {
+    let space = process.get_address_space();
     while !bytes.is_empty() {
-        ensure_user_page(space, dst)?;
-        let kva =
-            phys_to_virt(Arch::get_phys_addr(dst, space).ok_or("Failed to get physical address")?);
+        let phys_addr_opt = Arch::get_phys_addr(dst, space);
+        if phys_addr_opt.is_none() {
+            let cause = PageFaultConditions::USER | PageFaultConditions::WRITE;
+            handle_page_fault(cause, dst as usize, Some(process));
+        }
+        let phys_addr = Arch::get_phys_addr(dst, space).ok_or("Failed to get physical address")?;
+        let kva = phys_to_virt(phys_addr);
         let page_left = Arch::PAGE_SIZE - (dst as usize % Arch::PAGE_SIZE);
         let bytes_left = bytes.len();
         let to_copy = core::cmp::min(page_left, bytes_left);
@@ -220,16 +231,20 @@ pub fn copy_to_user(space: u64, mut dst: u64, mut bytes: &[u8]) -> Result<(), &s
     Ok(())
 }
 
-pub fn copy_from_user(process: &Arc<Process>, mut src: u64, mut bytes: &mut [u8]) -> Result<(), &'static str> {
+pub fn copy_from_user(
+    process: &Arc<Process>,
+    mut src: u64,
+    mut bytes: &mut [u8],
+) -> Result<(), &'static str> {
     let space = process.get_address_space();
     while !bytes.is_empty() {
-            let phys_addr_opt = Arch::get_phys_addr(src, space);
-            if phys_addr_opt.is_none() {
-                let cause = PageFaultConditions::USER;
-                handle_page_fault(cause, src as usize, Some(process));
-            }
-            let phys_addr = Arch::get_phys_addr(src, space).ok_or("Failed to get physical address")?;
-            let kva = phys_to_virt(phys_addr);
+        let phys_addr_opt = Arch::get_phys_addr(src, space);
+        if phys_addr_opt.is_none() {
+            let cause = PageFaultConditions::USER;
+            handle_page_fault(cause, src as usize, Some(process));
+        }
+        let phys_addr = Arch::get_phys_addr(src, space).ok_or("Failed to get physical address")?;
+        let kva = phys_to_virt(phys_addr);
         let page_left = Arch::PAGE_SIZE - (src as usize % Arch::PAGE_SIZE);
         let bytes_left = bytes.len();
         let to_copy = core::cmp::min(page_left, bytes_left);
@@ -241,31 +256,6 @@ pub fn copy_from_user(process: &Arc<Process>, mut src: u64, mut bytes: &mut [u8]
         bytes = rest;
     }
     Ok(())
-}
-
-// TODO we'll need some pinning system so after we ensure a page is present it doesn't get swapped out, but this will come with swap implementation
-// TODO also this should guaranteed to be registered with mmap, in our use case it is but worth the check
-fn ensure_user_page(space: u64, vaddr: u64) -> Result<(), &'static str> {
-    if Arch::get_phys_addr(vaddr, space).is_some() {
-        return Ok(());
-    }
-
-    let frame = frame_alloc();
-    Arch::virtual_map(
-        space,
-        vaddr & !(Arch::PAGE_SIZE as u64 - 1),
-        frame as u64,
-        PagingOptions::PRESENT
-            | PagingOptions::WRITABLE
-            | PagingOptions::CACHEABLE
-            | PagingOptions::USER_ACCESSIBLE,
-    );
-
-    if Arch::get_phys_addr(vaddr, space).is_some() {
-        Ok(())
-    } else {
-        Err("failed to map user page")
-    }
 }
 
 pub struct VirtualMemoryAllocation {

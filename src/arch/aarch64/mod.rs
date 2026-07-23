@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::arch::asm;
 
 use spin::Once;
@@ -7,6 +7,7 @@ use crate::{
     devices::discovery::DeviceDiscovery,
     memory::virtual_memory::{PagingOptions, copy_to_user},
     print::CharSink,
+    process::Process,
 };
 
 mod asm;
@@ -20,7 +21,6 @@ pub use asm::*;
 pub use context::Context;
 use context::save_context;
 pub use exceptions::{dump_core_state, init_exceptions};
-pub use gic::timer_ticks;
 pub use interrupt::*;
 use mp::{get_cpu_local_pointer, init_cpu_local_ptr, initialize_core};
 mod vmm;
@@ -74,7 +74,13 @@ impl ArchTrait for Arch {
         panic!("Not implemented");
     }
     // TODO implement proper auxv handling and envp
-    fn setup_stack(sp: u64, space: u64, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64> {
+    fn setup_stack(
+        sp: u64,
+        process: &Arc<Process>,
+        argc: u64,
+        argv: &[&str],
+        envp: &[&str],
+    ) -> Option<u64> {
         let mut sp = sp;
         assert!(argv.len() as u64 == argc);
         assert!(
@@ -90,16 +96,16 @@ impl ArchTrait for Arch {
         for arg in argv.iter() {
             let bytes = arg.as_bytes();
             sp -= (bytes.len() + 1) as u64; // +1 for null terminator
-            copy_to_user(space, sp, bytes).ok()?;
-            copy_to_user(space, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
+            copy_to_user(process, sp, bytes).ok()?;
+            copy_to_user(process, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
             arg_ptrs.push(sp as u64);
         }
 
         for env in envp.iter() {
             let bytes = env.as_bytes();
             sp -= (bytes.len() + 1) as u64; // +1 for null terminator
-            copy_to_user(space, sp, bytes).ok()?;
-            copy_to_user(space, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
+            copy_to_user(process, sp, bytes).ok()?;
+            copy_to_user(process, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
             env_ptrs.push(sp as u64);
         }
 
@@ -109,22 +115,22 @@ impl ArchTrait for Arch {
         let mut temp_sp = sp;
 
         // this should technically be replaced by a copy_u64 for speed, but this is fine for now
-        copy_to_user(space, temp_sp, &argc.to_ne_bytes()).ok()?; // argc
+        copy_to_user(process, temp_sp, &argc.to_ne_bytes()).ok()?; // argc
         temp_sp += 8;
 
         for ptr in arg_ptrs.iter() {
-            copy_to_user(space, temp_sp, &ptr.to_ne_bytes()).ok()?;
+            copy_to_user(process, temp_sp, &ptr.to_ne_bytes()).ok()?;
             temp_sp += 8;
         }
-        copy_to_user(space, temp_sp, &[0; 8]).ok()?; // NULL terminator for argv
+        copy_to_user(process, temp_sp, &[0; 8]).ok()?; // NULL terminator for argv
         temp_sp += 8;
         for ptr in env_ptrs.iter() {
-            copy_to_user(space, temp_sp, &ptr.to_ne_bytes()).ok()?;
+            copy_to_user(process, temp_sp, &ptr.to_ne_bytes()).ok()?;
             temp_sp += 8;
         }
-        copy_to_user(space, temp_sp, &[0; 8]).ok()?; // NULL terminator for envp
+        copy_to_user(process, temp_sp, &[0; 8]).ok()?; // NULL terminator for envp
         temp_sp += 8;
-        copy_to_user(space, temp_sp, &[0; 16]).ok()?; // NULL terminator for auxv
+        copy_to_user(process, temp_sp, &[0; 16]).ok()?; // NULL terminator for auxv
         return Some(sp as u64);
     }
 
@@ -217,14 +223,6 @@ impl ArchTrait for Arch {
 
     fn init_tty(_cell: &Once<Box<dyn CharSink>>) {
         // no op for aarch64, serial is implemented via uart_pl011 so devices must be parsed
-    }
-
-    fn get_ticks() -> u64 {
-        gic::timer_ticks()
-    }
-
-    fn get_tick_frequency() -> u64 {
-        gic::TIMER_HZ
     }
 }
 

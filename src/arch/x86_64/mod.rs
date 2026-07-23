@@ -10,7 +10,7 @@ use spin::Once;
 use uart_16550::SerialPort;
 use x86::bits64::registers::rbp;
 
-use crate::{arch::tsc::read_tsc, devices::discovery::DeviceDiscovery};
+use crate::{arch::tsc::read_tsc, devices::discovery::DeviceDiscovery, process::Process};
 
 pub mod apic;
 mod asm;
@@ -137,7 +137,7 @@ impl ArchTrait for Arch {
 
     fn setup_stack(
         _sp: u64,
-        _space: u64,
+        _process: &Arc<Process>,
         _argc: u64,
         _argv: &[&str],
         _envp: &[&str],
@@ -208,14 +208,6 @@ impl ArchTrait for Arch {
 
     fn init_tty(cell: &Once<Box<dyn CharSink>>) {
         cell.call_once(|| Box::new(SerialCharSink::open(0x3f8)));
-    }
-
-    fn get_tick_frequency() -> u64 {
-        interrupt::TIMER_HZ
-    }
-
-    fn get_ticks() -> u64 {
-        interrupt::timer_ticks()
     }
 }
 

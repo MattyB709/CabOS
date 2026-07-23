@@ -120,6 +120,9 @@ pub fn syscall_handler(thread: &Arc<Thread>, ctx: &mut impl SyscallContext) -> b
             }
             Err(err) => ctx.set_return_value(err),
         },
+        number::CLOCK_GETTIME => {
+            ctx.set_return_value(sys_clock_gettime(thread, ctx));
+        }
         number::EXIT => {
             ctx.set_return_value(sys_exit(thread, ctx));
             return true;

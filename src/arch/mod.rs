@@ -7,7 +7,8 @@ pub use self::x86_64::*;
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, vec::Vec, sync::Arc};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use limine::{mp::Cpu, request::MpRequest};
 use spin::{MutexGuard, Once};
@@ -15,9 +16,21 @@ use spin::{MutexGuard, Once};
 #[cfg(target_arch = "aarch64")]
 pub use self::aarch64::*;
 use crate::{
-    devices::discovery::DeviceDiscovery, memory::virtual_memory::PagingOptions, mp::CoreId,
+    devices::discovery::DeviceDiscovery,
+    memory::virtual_memory::PagingOptions,
+    mp::{CoreId, core_local},
     print::CharSink,
+    process::Process
 };
+
+pub const TIMER_HZ: u64 = 1000;
+core_local! {
+    pub TICKS: AtomicU64 = AtomicU64::new(0);
+}
+
+pub fn get_ticks() -> u64 {
+    TICKS.load(Ordering::Relaxed)
+}
 
 pub trait UnwindContextTrait: Sized {
     /// Returns the current stack frame as an unwind context
@@ -118,11 +131,8 @@ pub trait ArchTrait {
     fn create_arch_specific_drivers(
         system_drivers: &mut Vec<Box<dyn DeviceDiscovery + Send + Sync>>,
     );
-    fn get_ticks() -> u64;
-    fn get_tick_frequency() -> u64; // timer frequency in Hz
-
     // sets up the initial stack for a user process and returns the initial stack pointer. Space is the address space the stack should be mapped in
-    fn setup_stack(sp: u64, space: u64, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64>;
+    fn setup_stack(sp: u64, process: &Arc<Process>, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64>;
 
     fn init_tty(cell: &Once<Box<dyn CharSink>>);
 }

@@ -18,6 +18,7 @@ pub mod number {
     pub const EXIT: u64 = 93;
     pub const GETPID: u64 = 172;
     pub const MMAP: u64 = 222;
+    pub const CLOCK_GETTIME: u64 = 113;
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -42,6 +43,7 @@ pub mod number {
     pub const RMDIR: u64 = 84;
     pub const UNLINK: u64 = 87;
     pub const MMAP: u64 = 9;
+    pub const CLOCK_GETTIME: u64 = 228;
 
     pub const OPENAT: u64 = 257;
     pub const MKDIRAT: u64 = 258;
@@ -88,7 +90,8 @@ pub fn syscall_name(num: u64) -> &'static str {
         number::EXIT => "exit",
         number::GETPID => "getpid",
         number::MMAP => "mmap",
-
+        number::CLOCK_GETTIME => "clock_gettime",
+        
         #[cfg(target_arch = "x86_64")]
         number::OPEN => "open",
         #[cfg(target_arch = "x86_64")]

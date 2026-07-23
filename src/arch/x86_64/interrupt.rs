@@ -1,8 +1,5 @@
 use alloc::boxed::Box;
-use core::{
-    arch::naked_asm,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use core::arch::naked_asm;
 
 use intrusive_collections::{
     KeyAdapter, LinkedList, LinkedListAtomicLink, RBTree, RBTreeLink, intrusive_adapter,
@@ -12,23 +9,14 @@ use x86_64::{registers::segmentation::GS, structures::idt::PageFaultErrorCode};
 
 use super::apic;
 use crate::{
+    arch::TICKS,
     devices::discovery::acpi::IOAPIC_CPU_TO_LAPIC,
     event::{Event, push_event},
     memory::virtual_memory::PageFaultConditions,
-    mp::{CORE_ID, core_local},
+    mp::CORE_ID,
     sync::{IntMutex, MutexLike},
     thread::{CUR_TLS_ADDR, wakeup_sleepers},
 };
-
-core_local! {
-    TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
-}
-
-pub const TIMER_HZ: u64 = 500;
-
-pub fn timer_ticks() -> u64 {
-    TIMER_TICKS.load(Ordering::Relaxed)
-}
 
 #[repr(C)]
 pub struct InterruptContext {
@@ -140,7 +128,7 @@ pub mod irq_vector {
 }
 
 pub extern "C" fn timer_interrupt_handler(ctx: &InterruptContext) {
-    TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
+    TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     wakeup_sleepers();
     apic::eoi();
 

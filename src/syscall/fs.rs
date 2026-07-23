@@ -35,36 +35,36 @@ pub fn read_user_string(
     thread: &Arc<Thread>,
     ctx: &impl SyscallContext,
 ) -> Result<String, &'static str> {
-    let process = thread.process.get().expect("Function should only be called from process context");
-     let mut result = Vec::new();
+    let process = thread
+        .process
+        .get()
+        .expect("Function should only be called from process context");
+    let mut result = Vec::new();
 
-     while result.len() < MAX_USER_STRING_LEN {
+    while result.len() < MAX_USER_STRING_LEN {
         let addr = ptr
-             .checked_add(result.len() as u64)
-             .ok_or("User string address overflow")?;
+            .checked_add(result.len() as u64)
+            .ok_or("User string address overflow")?;
 
-         if !ctx.is_user_address(addr) {
-             return Err("Invalid address");
-         }
+        if !ctx.is_user_address(addr) {
+            return Err("Invalid address");
+        }
 
-         let page_left = Arch::PAGE_SIZE - (addr as usize % Arch::PAGE_SIZE);
-         let count = core::cmp::min(page_left, MAX_USER_STRING_LEN -
-         result.len());
-         let mut chunk = vec![0u8; count];
+        let page_left = Arch::PAGE_SIZE - (addr as usize % Arch::PAGE_SIZE);
+        let count = core::cmp::min(page_left, MAX_USER_STRING_LEN - result.len());
+        let mut chunk = vec![0u8; count];
 
-         copy_from_user(process, addr, &mut chunk)
-             .map_err(|_| "Failed to copy from user")?;
+        copy_from_user(process, addr, &mut chunk).map_err(|_| "Failed to copy from user")?;
 
-         if let Some(nul) = chunk.iter().position(|&b| b == 0) {
-             result.extend_from_slice(&chunk[..nul]);
-             return String::from_utf8(result)
-                 .map_err(|_| "User string was not valid UTF-8");
-         }
+        if let Some(nul) = chunk.iter().position(|&b| b == 0) {
+            result.extend_from_slice(&chunk[..nul]);
+            return String::from_utf8(result).map_err(|_| "User string was not valid UTF-8");
+        }
 
-         result.extend_from_slice(&chunk);
-     }
+        result.extend_from_slice(&chunk);
+    }
 
-     Err("User string was not null-terminated")
+    Err("User string was not null-terminated")
 }
 
 // ABI Decoder Layer
@@ -134,11 +134,14 @@ pub fn do_sys_read(
     if !ctx.is_user_address(buf_ptr) || (count > 0 && !ctx.is_user_address(buf_ptr + count - 1)) {
         -1i64 as u64
     } else {
-        let address_space = thread.process.get().unwrap().get_address_space();
         let fd_table = thread.process.get().unwrap().fd_table.lock();
         if let Some(file) = fd_table.get(&(fd as i32)) {
             match file.read(&mut buf) {
-                Ok(n) if copy_to_user(address_space, buf_ptr, &buf[..n]).is_ok() => n as u64,
+                Ok(n)
+                    if copy_to_user(thread.process.get().unwrap(), buf_ptr, &buf[..n]).is_ok() =>
+                {
+                    n as u64
+                }
                 _ => -1i64 as u64,
             }
         } else {
@@ -155,11 +158,7 @@ pub fn do_sys_write(
     ctx: &impl SyscallContext,
 ) -> u64 {
     let mut buf = vec![0u8; count as usize];
-    let result = copy_from_user(
-        thread.process.get().unwrap(),
-        buf_ptr,
-        &mut buf,
-    );
+    let result = copy_from_user(thread.process.get().unwrap(), buf_ptr, &mut buf);
     if result.is_err() {
         return -1i64 as u64;
     }
@@ -244,7 +243,16 @@ pub fn do_sys_openat(
     }
 
     for &comp in &components[..components.len() - 1] {
-        kprintln!("Looking up component: {}", comp);
+        if comp == "dev" {
+            // TODO implement actual path traversal
+            current = VFS
+                .partial_lookup(
+                    &VFS.get_root().expect("vfs should have root"),
+                    &["/", "dev"],
+                )
+                .expect("mount traversal to /dev failed");
+            continue;
+        }
         match current.lookup(comp) {
             Ok(next) => current = next,
             Err(err) => {
@@ -325,7 +333,12 @@ pub fn do_sys_lseek(fd: i32, offset: i64, whence: i32, thread: &Arc<Thread>) -> 
         return errno(ESPIPE);
     }
 
-    kprintln!("Seeking file descriptor {}: offset: {} whence: {}", fd, offset, whence);
+    kprintln!(
+        "Seeking file descriptor {}: offset: {} whence: {}",
+        fd,
+        offset,
+        whence
+    );
     let file = {
         let fd_table = thread.process.get().unwrap().fd_table.lock();
         let Some(file) = fd_table.get(&fd) else {
@@ -334,13 +347,19 @@ pub fn do_sys_lseek(fd: i32, offset: i64, whence: i32, thread: &Arc<Thread>) -> 
         Arc::clone(file)
     };
 
-    let res = file.seek(offset, whence); 
+    let res = file.seek(offset, whence);
     if res.is_err() {
-        kprintln!("Error seeking file descriptor {}: offset: {} whence: {} {:?}", fd, offset, whence, res);
+        kprintln!(
+            "Error seeking file descriptor {}: offset: {} whence: {} {:?}",
+            fd,
+            offset,
+            whence,
+            res
+        );
     }
     match res {
         Ok(new_offset) => new_offset as u64,
-        Err(FsError::InvalidInput | FsError::InvalidOperation) => {errno(EINVAL)},
+        Err(FsError::InvalidInput | FsError::InvalidOperation) => errno(EINVAL),
         Err(_) => errno(EINVAL),
     }
 }

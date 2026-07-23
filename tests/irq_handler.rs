@@ -9,7 +9,7 @@ kernel_common::integration_test!({
     use core::sync::atomic::{AtomicBool, Ordering};
 
     use kernel_common::{
-        arch::{Arch, ArchTrait, apic, timer_ticks},
+        arch::{Arch, ArchTrait, apic, get_ticks},
         print::kprintln,
     };
 
@@ -50,8 +50,8 @@ kernel_common::integration_test!({
     }
 
     // Wait up to ~several seconds (based on APIC timer ticks) for the RTC to fire.
-    let deadline = timer_ticks() + 2000;
-    while !FIRED.load(Ordering::Relaxed) && timer_ticks() < deadline {
+    let deadline = get_ticks() + 2000;
+    while !FIRED.load(Ordering::Relaxed) && get_ticks() < deadline {
         core::hint::spin_loop();
     }
 

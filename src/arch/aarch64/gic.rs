@@ -1,19 +1,16 @@
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::Ordering;
 
 use spin::Once;
 
 use crate::{
-    arch::aarch64::devices::a15_gic::{GICC_BASE_VIRT, GICD_BASE_VIRT},
-    mp::core_local,
+    arch::{
+        TIMER_HZ,
+        aarch64::devices::a15_gic::{GICC_BASE_VIRT, GICD_BASE_VIRT},
+    },
     print::kprintln,
 };
 
-pub const TIMER_HZ: u64 = 1000;
 pub static TIMER_INTERVAL: Once<u64> = Once::new();
-
-core_local! {
-    pub TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
-}
 
 const GICD_ISENABLER0: usize = 0x100;
 
@@ -30,14 +27,6 @@ fn timer_frequency() -> u64 {
         core::arch::asm!("mrs {x}, cntfrq_el0", x = out(reg) freq);
     }
     freq
-}
-
-pub fn timer_ticks() -> u64 {
-    TIMER_TICKS.load(Ordering::Relaxed)
-}
-
-pub fn inc_timer_ticks() {
-    TIMER_TICKS.fetch_add(1, Ordering::Relaxed);
 }
 
 pub fn timer_reset_interval() {

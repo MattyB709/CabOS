@@ -20,7 +20,9 @@ use intrusive_collections::{
 use spin::{Mutex, MutexGuard, Once};
 
 use crate::{
-    arch::{Arch, ArchTrait, Context, ContextTrait, InterruptContext, sleep_core},
+    arch::{
+        Arch, ArchTrait, Context, ContextTrait, InterruptContext, TIMER_HZ, get_ticks, sleep_core,
+    },
     event::Event,
     local_storage::{LocalStorage, LocalStorageHandler, impl_local_storage},
     memory::virtual_memory_2::VirtualMemory,
@@ -552,9 +554,7 @@ pub fn spawn_user_thread(process: &Arc<Process>, pc: usize, sp: usize) {
 
 // Put a thread to sleep for at least duration_ms. Thread is woken up by timer interrupt handler
 pub fn sleep(thread: Arc<Thread>, duration_ms: u64) {
-    let duration_ticks = duration_ms
-        .saturating_mul(Arch::get_tick_frequency())
-        .div_ceil(1000);
+    let duration_ticks = duration_ms.saturating_mul(TIMER_HZ).div_ceil(1000);
     // Allocate before disabling IRQs and taking the queue lock.  The deadline itself
     // must be based on a tick read while the local timer IRQ cannot scan this queue.
     let mut sleep = Box::new(SleepState {
@@ -564,7 +564,7 @@ pub fn sleep(thread: Arc<Thread>, duration_ms: u64) {
     });
 
     let mut queue = SLEEP_QUEUE.lock();
-    sleep.wakeup_tick = Arch::get_ticks().saturating_add(duration_ticks);
+    sleep.wakeup_tick = get_ticks().saturating_add(duration_ticks);
     let wakeup_tick = sleep.wakeup_tick;
     let mut cursor = queue.front_mut();
     while let Some(existing) = cursor.get() {
@@ -582,7 +582,7 @@ pub fn sleep(thread: Arc<Thread>, duration_ms: u64) {
 
 // called by timer interrupt
 pub fn wakeup_sleepers() {
-    let current_tick = Arch::get_ticks();
+    let current_tick = get_ticks();
     let mut queue = SLEEP_QUEUE.lock();
     let mut cursor = queue.front_mut();
     while let Some(sleep) = cursor.get() {

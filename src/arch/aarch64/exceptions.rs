@@ -5,7 +5,7 @@ use core::{
 
 use super::{context::GPRegisters, interrupt::InterruptContext};
 use crate::{
-    arch::aarch64::gic,
+    arch::{TICKS, aarch64::gic},
     event::{Event, push_event},
     memory::virtual_memory::PageFaultConditions,
     mp::CORE_ID,
@@ -148,8 +148,7 @@ fn page_fault_handler(e: &mut ExceptionContext, exception_class: u64) {
 #[allow(unused_variables)]
 fn timer_interrupt_handler(e: &mut ExceptionContext) {
     gic::timer_reset_interval();
-    gic::inc_timer_ticks();
-    let ticks = gic::timer_ticks();
+    TICKS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 
     let interrupt_context = InterruptContext {
         gpr: e.gpr,

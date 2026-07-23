@@ -4,19 +4,18 @@
 #![test_runner(kernel_common::test_runner)]
 
 kernel_common::integration_test!({
-    // You'll need to find where timer_ticks is and how to access it
-    use kernel_common::{arch::timer_ticks, print::kprintln};
+    use kernel_common::{arch::get_ticks, print::kprintln};
 
     kprintln!("Testing timer...");
     // kprintln!("Timer is ticking!");
 
-    let initial_ticks = timer_ticks();
+    let initial_ticks = get_ticks();
 
     for _ in 0..10_000_000 {
         unsafe { core::arch::asm!("nop") };
     }
 
-    let final_ticks = timer_ticks();
+    let final_ticks = get_ticks();
 
     if final_ticks > initial_ticks {
         kprintln!("Timer is ticking!");
