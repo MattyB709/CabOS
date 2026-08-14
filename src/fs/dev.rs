@@ -14,6 +14,7 @@ use crate::{
         discovery::{BLOCK_DEVICES, CHAR_DEVICES},
     },
     fs::vfs::{Filesystem, FsError, INodeKey, INodeType, VNode},
+    memory::virtual_memory_2::MapBacking,
     sync::{IntMutex, MutexLike},
 };
 
@@ -187,6 +188,15 @@ impl VNode for DevINode {
             };
         }
         Err(FsError::InvalidOperation)
+    }
+
+    fn prepare_mmap(&self, offset: usize) -> Result<MapBacking, FsError> {
+        match self.device.get() {
+            Some(DeviceBackend::Char(char)) => char
+                .prepare_mmap(offset)
+                .map_err(|_| FsError::InvalidOperation),
+            _ => Err(FsError::NotImplemented),
+        }
     }
 }
 

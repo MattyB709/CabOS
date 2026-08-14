@@ -7,7 +7,7 @@ pub use self::x86_64::*;
 #[cfg(target_arch = "aarch64")]
 mod aarch64;
 
-use alloc::{boxed::Box, vec::Vec, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use limine::{mp::Cpu, request::MpRequest};
@@ -20,7 +20,7 @@ use crate::{
     memory::virtual_memory::PagingOptions,
     mp::{CoreId, core_local},
     print::CharSink,
-    process::Process
+    process::Process,
 };
 
 pub const TIMER_HZ: u64 = 1000;
@@ -118,10 +118,10 @@ pub trait ArchTrait {
     fn get_kernel_address_space() -> u64;
     fn get_user_address_space() -> u64;
     fn set_user_address_space(space: u64);
-    fn get_phys_addr(vaddr: u64, space: u64) -> Option<u64>;
     fn configure_vm();
     fn virtual_map(space: u64, vaddr: u64, paddr: u64, options: PagingOptions);
     fn virtual_unmap(space: u64, vaddr: u64) -> Option<u64>;
+    fn get_phys_addr(vaddr: u64, space: u64) -> Option<u64>;
     /// Unmaps a page without freeing the physical frame (for MMIO / externally-owned backing).
     fn virtual_unmap_no_dealloc(space: u64, vaddr: u64) -> Option<u64>;
     fn virtual_invalidate(vaddr: u64);
@@ -132,7 +132,13 @@ pub trait ArchTrait {
         system_drivers: &mut Vec<Box<dyn DeviceDiscovery + Send + Sync>>,
     );
     // sets up the initial stack for a user process and returns the initial stack pointer. Space is the address space the stack should be mapped in
-    fn setup_stack(sp: u64, process: &Arc<Process>, argc: u64, argv: &[&str], envp: &[&str]) -> Option<u64>;
+    fn setup_stack(
+        sp: u64,
+        process: &Arc<Process>,
+        argc: u64,
+        argv: &[&str],
+        envp: &[&str],
+    ) -> Option<u64>;
 
     fn init_tty(cell: &Once<Box<dyn CharSink>>);
 }

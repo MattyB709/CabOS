@@ -1,7 +1,10 @@
 use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::sync::{IntMutex, MutexLike};
+use crate::{
+    memory::virtual_memory_2::MapBacking,
+    sync::{IntMutex, MutexLike},
+};
 
 // TODO we probably don't want to cache on both the fs and the VFS level,
 type INodeCache = BTreeMap<usize, BTreeMap<usize, Arc<dyn VNode>>>;
@@ -266,6 +269,12 @@ pub trait VNode: Send + Sync {
     // this is overridden for special filesystems that have more complicated seek semantics, like /dev
     fn seekable(&self) -> bool {
         matches!(self.get_type(), INodeType::File | INodeType::Block)
+    }
+
+    // used by devices and fake filesystems to configure mmap behavior
+    // if a file is not able to be mmaped, it should overwrite this and return InvalidOperation
+    fn prepare_mmap(&self, _offset: usize) -> Result<MapBacking, FsError> {
+        Err(FsError::NotImplemented)
     }
     // Symlink
     // fn traverse() -> str

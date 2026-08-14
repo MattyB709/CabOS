@@ -5,6 +5,8 @@ use limine::{framebuffer::Framebuffer, request::FramebufferRequest};
 use super::{CharDevice, CharDeviceError};
 use crate::{
     devices::{Device, discovery::CHAR_DEVICES},
+    arch::{Arch, ArchTrait},
+    memory::{virtual_memory::PagingOptions, virtual_memory_2::MapBacking},
     sync::{IntMutex, MutexLike},
 };
 
@@ -64,6 +66,20 @@ impl<'a> CharDevice for LimineFramebuffer<'a> {
 
     fn seekable(&self) -> bool {
         true
+    }
+
+    fn prepare_mmap(&self, offset: usize) -> Result<MapBacking, CharDeviceError> {
+        let framebuffer = self.inner.lock();
+        let addr = framebuffer.addr();
+        let paddr = Arch::get_phys_addr(addr as u64, Arch::get_kernel_address_space()).ok_or(CharDeviceError::Other("Could not get physical address".into()))?;
+        let length = self.length;
+        if offset >= length {
+            return Err(CharDeviceError::Other("Offset out of bounds".into()));
+        }
+        Ok(MapBacking::Device {
+            paddr: paddr as usize + offset,
+            memory_info: PagingOptions::from_bits(0).unwrap(), // uncacheable, but not device memory
+        })
     }
 }
 

@@ -1,6 +1,6 @@
 use alloc::string::String;
 
-use crate::devices::Device;
+use crate::{devices::Device, memory::virtual_memory_2::MapBacking};
 pub mod limine_framebuffer;
 #[cfg(target_arch = "x86_64")]
 pub mod ps2_kb_m;
@@ -21,5 +21,9 @@ pub trait CharDevice: Device {
 
     fn seekable(&self) -> bool {
         false
+    }
+
+    fn prepare_mmap(&self, _offset: usize) -> Result<MapBacking, CharDeviceError> {
+        Err(CharDeviceError::Other("Nothing to prepare".into()))
     }
 }

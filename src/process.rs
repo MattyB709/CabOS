@@ -1,12 +1,16 @@
 use alloc::{collections::BTreeMap, sync::Arc};
 extern crate bitvec;
+use bitflags::bitflags;
 use bitvec::prelude::{BitVec, bitvec};
 use spin::Once;
 
 use crate::{
     arch::{Arch, ArchTrait},
     fs::{file::File, vfs::VNode},
-    memory::virtual_memory_2::{MappingFlags, VirtualMemory},
+    memory::{
+        virtual_memory::{PagingOptions},
+        virtual_memory_2::{FileMapping, VirtualMemory},
+    },
     print::kprintln,
     sync::{IntMutex, MutexLike, Promise},
     thread::{THIS_THREAD, spawn_thread},
@@ -73,6 +77,27 @@ pub fn init_pid_allocator() {
     PID_ALLOCATOR.call_once(|| IntMutex::new(PidAllocator::new()));
 }
 
+bitflags! {
+    #[derive(Debug)]
+    struct ProtectionFlags: u32 {
+        const NONE = 0;
+        const READ = 0b0001;
+        const WRITE = 0b0010;
+        const EXECUTE = 0b0100;
+    }
+}
+
+bitflags! {
+    #[derive(Debug)]
+    struct MappingFlags: u32 {
+        const NONE = 0;
+        const MAP_SHARED = 0b0001;
+        const MAP_PRIVATE = 0b0010;
+        const MAP_FIXED = 0b10000;
+        const MAP_ANONYMOUS = 0b100000;
+    }
+}
+
 impl Process {
     pub fn new() -> Option<Arc<Self>> {
         let pid = PID_ALLOCATOR.get().unwrap().lock().alloc()?;
@@ -102,54 +127,64 @@ impl Process {
         self.virtual_memory.get_page_table() as u64
     }
 
-    // linux mmap syscall
-    // TODO handle permissions, right now we just map everything as read/write/execute
+    // linux style mmap syscall
     pub fn sys_mmap(
         &self,
         addr: u64,
         length: u64,
-        _prot: u32,
+        prot: u32,
         flags: u32,
         fd: i32,
         offset: u64,
     ) -> u64 {
-        let inode_key = if fd == -1 {
+
+        let Some(prot_flags) = ProtectionFlags::from_bits(prot) else {
+            return -1i64 as u64;
+        };
+        let Some(map_flags) = MappingFlags::from_bits(flags) else {
+            return -1i64 as u64;
+        };
+        let mmap_file = if map_flags.contains(MappingFlags::MAP_ANONYMOUS) {
             None
         } else {
-            let Some(file) = self.get_file(fd) else {
-                return 0;
-            };
-            let key = match file.vnode.get_inode_key() {
-                Ok(key) => key,
-                Err(error) => {
-                    kprintln!("{:?}", error);
-                    return 0;
+            match self.get_file(fd) {
+                Some(file) => {
+                    let vnode = file.vnode.clone();
+                    Some(FileMapping {
+                        vnode,
+                        file_offset: offset as usize,
+                        file_length: None,
+                    })
                 }
-            };
-            Some(key)
+                None => {
+                    return -1i64 as u64;
+                }
+            }
         };
-
-        let mmap_file = inode_key.map(|inode_key| (inode_key, offset as usize, None));
-
-        let shared = flags & MappingFlags::MAP_SHARED.bits() != 0;
-        if shared {
-            kprintln!("WARNING: shared mapping not fully handled");
-        }
-
-        let addr = if flags & MappingFlags::MAP_FIXED.bits() != 0 && addr != 0 {
+        let addr = if map_flags.contains(MappingFlags::MAP_FIXED) && addr != 0 {
             Some(addr as usize)
         } else {
             None
         };
 
+        let shared = if map_flags.contains(MappingFlags::MAP_SHARED) {
+            true
+        } else if map_flags.contains(MappingFlags::MAP_PRIVATE) {
+            false
+        } else {
+            kprintln!("Invalid mapping flags: {:?}", map_flags);
+            return 0;
+        };
+
+        let page_flags = prot_to_page_flags(prot_flags);
         match self
             .virtual_memory
-            .mmap(mmap_file, length as usize, shared, addr)
+            .mmap(mmap_file, length as usize, page_flags, shared, addr)
         {
             Ok(return_addr) => return_addr as u64,
             Err(message) => {
                 kprintln!("{}", message);
-                0
+                -1i64 as u64
             }
         }
     }
@@ -159,6 +194,19 @@ impl Process {
         let fd_table = self.fd_table.lock();
         fd_table.get(&fd).map(Arc::clone)
     }
+}
+
+// helper method to convert from mmap flags to internal page permissions
+fn prot_to_page_flags(prot: ProtectionFlags) -> PagingOptions {
+    let mut page_flags = PagingOptions::empty();
+    if prot.contains(ProtectionFlags::WRITE) {
+        page_flags |= PagingOptions::WRITABLE;
+    }
+    if prot.contains(ProtectionFlags::EXECUTE) {
+        page_flags |= PagingOptions::EXECUTABLE;
+    }
+    // TODO we don't have an internal not readable option to decide on ProtectionFlags::READ
+    page_flags
 }
 
 #[cfg(test)]

@@ -333,12 +333,6 @@ pub fn do_sys_lseek(fd: i32, offset: i64, whence: i32, thread: &Arc<Thread>) -> 
         return errno(ESPIPE);
     }
 
-    kprintln!(
-        "Seeking file descriptor {}: offset: {} whence: {}",
-        fd,
-        offset,
-        whence
-    );
     let file = {
         let fd_table = thread.process.get().unwrap().fd_table.lock();
         let Some(file) = fd_table.get(&fd) else {

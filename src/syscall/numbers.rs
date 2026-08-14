@@ -91,7 +91,7 @@ pub fn syscall_name(num: u64) -> &'static str {
         number::GETPID => "getpid",
         number::MMAP => "mmap",
         number::CLOCK_GETTIME => "clock_gettime",
-        
+
         #[cfg(target_arch = "x86_64")]
         number::OPEN => "open",
         #[cfg(target_arch = "x86_64")]

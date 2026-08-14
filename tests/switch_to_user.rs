@@ -8,6 +8,7 @@ kernel_common::integration_test!({
         devices::discovery::BLOCK_DEVICES,
         elf::ElfLoader,
         fs::{ext2::Ext2, vfs::VFS},
+        memory::virtual_memory::PagingOptions,
         print::kprintln,
         process::Process,
         sync::MutexLike,
@@ -25,7 +26,7 @@ kernel_common::integration_test!({
     let start_address = ElfLoader::load(node, &process).expect("Failed to load ELF file.");
     let stack = process
         .virtual_memory
-        .mmap(None, 4096 * 4, false, None)
+        .mmap(None, 4096 * 4, PagingOptions::WRITABLE, false, None)
         .unwrap();
     spawn_user_thread(
         &process,

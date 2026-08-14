@@ -1,12 +1,11 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
-use bitflags::bitflags;
 use intrusive_collections::{Bound, KeyAdapter, RBTree, RBTreeLink, intrusive_adapter};
 use spin::Once;
 
 use crate::{
     arch::{Arch, ArchTrait},
-    fs::{fake::create_fake_file, vfs::INodeKey},
+    fs::vfs::{FsError, VNode},
     memory::{
         freeset::FreeSet,
         page_cache::{PAGE_CACHE, PageKey},
@@ -19,33 +18,28 @@ pub const USERSPACE_START: usize = 0x10000;
 pub const USERSPACE_END: usize = 0x8000_0000_0000_0000;
 static LIMINE_PAGE_TABLE: Once<usize> = Once::new();
 
-struct Mapping {
-    inode_key: INodeKey,
-    file_offset: usize,
-    file_length: Option<usize>,
+pub struct Mapping {
+    backing: MapBacking,
     length: usize,
+    prot: PagingOptions,
     shared: bool,
     base: usize,
     link: RBTreeLink,
 }
 
-bitflags! {
-    struct ProtectionFlags: u32 {
-        const NONE = 0;
-        const READ = 0b0001;
-        const WRITE = 0b0010;
-        const EXECUTE = 0b0100;
-    }
+pub enum MapBacking {
+    File(FileMapping),
+    Device {
+        paddr: usize,
+        memory_info: PagingOptions, // device can decide exact memory attributes necessary
+    },
+    Anonymous,
 }
 
-bitflags! {
-    pub(crate) struct MappingFlags: u32 {
-        const NONE = 0;
-        const MAP_SHARED = 0b0001;
-        const MAP_PRIVATE = 0b0010;
-        const MAP_FIXED = 0b10000;
-        const MAP_ANONYMOUS = 0b100000;
-    }
+pub struct FileMapping {
+    pub vnode: Arc<dyn VNode>,
+    pub file_offset: usize,
+    pub file_length: Option<usize>,
 }
 
 intrusive_adapter!(MappingAdapter = Box<Mapping>: Mapping { link => RBTreeLink });
@@ -71,56 +65,65 @@ impl VirtualMemory {
 
     pub fn mmap(
         &self,
-        file: Option<(INodeKey, usize, Option<usize>)>,
+        file: Option<FileMapping>,
         length: usize,
+        prot: PagingOptions,
         shared: bool,
         preferred_base: Option<usize>,
     ) -> Result<usize, &'static str> {
-        let mut file = file;
         if !length.is_multiple_of(Arch::PAGE_SIZE) {
             return Err("map length must be aligned to page boundary");
         }
-        if let Some((_, file_offset, file_length)) = file {
-            if !file_offset.is_multiple_of(Arch::PAGE_SIZE) {
-                return Err("file offset must be aligned to page boundary");
+
+        let backing = match file {
+            Some(fm) => {
+                if !fm.file_offset.is_multiple_of(Arch::PAGE_SIZE) {
+                    return Err("file offset must be aligned to page boundary");
+                }
+                match fm.vnode.prepare_mmap(fm.file_offset) {
+                    Ok(map_backing) => map_backing,
+                    Err(FsError::NotImplemented) => MapBacking::File(fm), // nothing special to do
+                    _ => return Err("failed to prepare mmap"), // TODO use this for proper errno handling
+                }
             }
-            if file_length.is_some() && shared {
+            None => MapBacking::Anonymous,
+        };
+
+        if let MapBacking::File(fm) = &backing {
+            if fm.file_length.is_some() && shared {
                 return Err(
                     "we do not allow partial file maps if shared (this feature only affects the ELF loader)",
                 );
             }
-            if let Some(file_length) = file_length
+            if let Some(file_length) = fm.file_length
                 && file_length > length
             {
                 return Err("file length is bigger than length of map");
             }
         }
 
-        let base: usize;
         let mut free_set = self.free_set.lock();
-        if let Some(preferred_base) = preferred_base {
-            free_set.remove_range_by_base(preferred_base, length)?;
-            base = preferred_base;
-        } else {
-            base = free_set.remove_range_by_length(length)?;
-        }
+        let base = match preferred_base {
+            Some(preferred_base) => {
+                // note: linux mmap doesn't fail when preferred base in unavailable, for our impl we do
+                free_set.remove_range_by_base(preferred_base, length)?;
+                preferred_base
+            }
+            None => free_set.remove_range_by_length(length)?,
+        };
 
-        if file.is_none() {
-            file = Some((create_fake_file()?, 0, None));
-        }
-
-        // TODO allow for anonymous maps
-        let file = file.unwrap();
-        let mut active_set = self.active_set.lock();
-        active_set.insert(Box::new(Mapping {
-            inode_key: file.0,
-            file_offset: file.1,
-            file_length: file.2,
+        let mapping = Mapping {
+            backing,
             length,
+            prot,
             shared,
             base,
             link: RBTreeLink::new(),
-        }));
+        };
+
+        let mut active_set = self.active_set.lock();
+        active_set.insert(Box::new(mapping));
+
         Ok(base)
     }
 
@@ -187,83 +190,182 @@ impl VirtualMemory {
         // shootdowns. It does a shootdown, even when we are doing a
         // read->write promotion, which is not needed.
         if cause.contains(PageFaultConditions::PRESENT) {
+            // TODO this can cause an infinite loop if the mapping is present but not writable.
+            // Need to implement process termination for invalid memory access./
             self.invlpg(vaddr);
         }
         if mapping.shared {
-            self.handle_file_shared(vaddr, mapping)
+            self.handle_mapping_shared(vaddr, mapping)
         } else {
-            self.handle_file_private(cause, vaddr, mapping)
+            self.handle_mapping_private(cause, vaddr, mapping)
         }
     }
 
-    fn handle_file_shared(&self, vaddr: usize, mapping: &Mapping) -> Result<(), &'static str> {
+    fn handle_mapping_shared(&self, vaddr: usize, mapping: &Mapping) -> Result<(), &'static str> {
         assert!(vaddr.is_multiple_of(Arch::PAGE_SIZE));
-        let key = PageKey {
-            inode_key: mapping.inode_key.clone(),
-            offset: vaddr - mapping.base + mapping.file_offset,
-        };
-        let paddr = PAGE_CACHE.lock().get_page(&key)?;
-        self.vmap_write(vaddr, paddr);
+
+        match &mapping.backing {
+            MapBacking::File(fm) => {
+                let key = PageKey {
+                    inode_key: fm
+                        .vnode
+                        .get_inode_key()
+                        .map_err(|_| "could not get inode key")?,
+                    offset: vaddr - mapping.base + fm.file_offset,
+                };
+                let paddr = PAGE_CACHE.lock().get_page(&key)?;
+                let permissions = PagingOptions::PRESENT
+                    | PagingOptions::CACHEABLE
+                    | PagingOptions::USER_ACCESSIBLE
+                    | mapping.prot;
+                Arch::virtual_map(
+                    self.get_page_table() as u64,
+                    vaddr as u64,
+                    paddr as u64,
+                    permissions,
+                );
+            }
+            MapBacking::Device { paddr, memory_info } => {
+                // TODO validate length of mapping against device memory size
+                let page_offset = vaddr - mapping.base;
+                let permissions = PagingOptions::PRESENT
+                    | PagingOptions::USER_ACCESSIBLE
+                    | mapping.prot
+                    | *memory_info;
+                Arch::virtual_map(
+                    self.get_page_table() as u64,
+                    vaddr as u64,
+                    (*paddr + page_offset) as u64,
+                    permissions,
+                );
+            }
+            MapBacking::Anonymous => {
+                return Err("shared anonymous mappings not implemented");
+            }
+        }
         Ok(())
     }
 
-    fn handle_file_private(
+    fn handle_mapping_private(
         &self,
-        cause: PageFaultConditions,
+        _cause: PageFaultConditions, // TODO use cause for COW
         vaddr: usize,
         mapping: &Mapping,
     ) -> Result<(), &'static str> {
         assert!(vaddr.is_multiple_of(Arch::PAGE_SIZE));
-        if let Some(file_length) = mapping.file_length
-            && self.handle_file_private_partial(vaddr, mapping, file_length)?
-        {
-            return Ok(());
+        match &mapping.backing {
+            MapBacking::File(fm) => {
+                if let Some(file_length) = fm.file_length
+                    && self.handle_mapping_private_partial(vaddr, mapping, file_length)?
+                {
+                    return Ok(());
+                }
+                // TODO use page cache here
+                let paddr = physical_memory::frame_alloc();
+                let permissions = PagingOptions::PRESENT
+                    | PagingOptions::CACHEABLE
+                    | PagingOptions::USER_ACCESSIBLE
+                    | mapping.prot;
+                Arch::virtual_map(
+                    self.get_page_table() as u64,
+                    vaddr as u64,
+                    paddr as u64,
+                    permissions,
+                );
+                fm.vnode
+                    .read_page(paddr, vaddr - mapping.base + fm.file_offset)
+                    .map_err(|_| "could not read from file")?;
+            }
+            MapBacking::Device {
+                paddr: _,
+                memory_info: _,
+            } => return Err("Private device mappings are not supported"),
+            MapBacking::Anonymous => {
+                let paddr = physical_memory::frame_alloc();
+                let permissions = PagingOptions::PRESENT
+                    | PagingOptions::CACHEABLE
+                    | PagingOptions::USER_ACCESSIBLE
+                    | mapping.prot;
+                Arch::virtual_map(
+                    self.get_page_table() as u64,
+                    vaddr as u64,
+                    paddr as u64,
+                    permissions,
+                );
+                unsafe {
+                    core::ptr::write_bytes(
+                        (paddr + *physical_memory::HHDM_OFFSET.get().unwrap()) as *mut u8,
+                        0,
+                        Arch::PAGE_SIZE,
+                    );
+                }
+            }
         }
-        let shared_key = PageKey {
-            inode_key: mapping.inode_key.clone(),
-            offset: mapping.file_offset + vaddr - mapping.base,
-        };
-        let shared_paddr = PAGE_CACHE.lock().get_page(&shared_key)?;
-        if !cause.contains(PageFaultConditions::WRITE) {
-            self.vmap_read(vaddr, shared_paddr);
-            return Ok(());
-        }
-        let private_key = PageKey {
-            inode_key: create_fake_file()?,
-            offset: 0,
-        };
-        let private_paddr = PAGE_CACHE.lock().get_page(&private_key)?;
-        unsafe { physical_memory::copy(shared_paddr, private_paddr, Arch::PAGE_SIZE) };
-        self.vmap_write(vaddr, private_paddr);
         Ok(())
     }
 
-    fn handle_file_private_partial(
+    // this method returns either an error, true if the faulting address was in a partial file page,
+    // or false otherwise
+    fn handle_mapping_private_partial(
         &self,
         vaddr: usize,
         mapping: &Mapping,
         file_length: usize,
     ) -> Result<bool, &'static str> {
+        // if the page of the vaddr is fully contained in the file, use the normal faulting path
         if vaddr - mapping.base + Arch::PAGE_SIZE <= file_length {
             return Ok(false);
         }
-        let private_key = PageKey {
-            inode_key: create_fake_file()?,
-            offset: 0,
+
+        let MapBacking::File(fm) = &mapping.backing else {
+            return Err("partial file mapping has non-file backing");
         };
-        let private_paddr = PAGE_CACHE.lock().get_page(&private_key)?;
-        if vaddr - mapping.base < file_length {
-            let shared_key = PageKey {
-                inode_key: mapping.inode_key.clone(),
-                offset: vaddr - mapping.base + mapping.file_offset,
+
+        let private_paddr = physical_memory::frame_alloc();
+        let page_offset = vaddr - mapping.base;
+        let file_bytes = file_length.saturating_sub(page_offset);
+
+        if file_bytes > 0 {
+            let file_key = PageKey {
+                inode_key: fm
+                    .vnode
+                    .get_inode_key()
+                    .map_err(|_| "could not get inode key")?,
+                offset: page_offset + fm.file_offset,
             };
-            let shared_paddr = PAGE_CACHE.lock().get_page(&shared_key)?;
-            unsafe {
-                let partial_file_length = file_length.rem_euclid(Arch::PAGE_SIZE);
-                physical_memory::copy(shared_paddr, private_paddr, partial_file_length);
+            let cached_paddr = PAGE_CACHE.lock().find_page(&file_key);
+            if let Some(file_paddr) = cached_paddr {
+                unsafe {
+                    physical_memory::copy(file_paddr, private_paddr, file_bytes);
+                }
+            } else {
+                fm.vnode
+                    .read_page(private_paddr, file_key.offset)
+                    .map_err(|_| "could not read from file")?;
             }
         }
-        self.vmap_write(vaddr, private_paddr);
+
+        let hhdm = *physical_memory::HHDM_OFFSET
+            .get()
+            .ok_or("could not get HHDM offset")?;
+        unsafe {
+            core::ptr::write_bytes(
+                (private_paddr + hhdm + file_bytes) as *mut u8,
+                0,
+                Arch::PAGE_SIZE - file_bytes,
+            );
+        }
+
+        let permissions = PagingOptions::PRESENT
+            | PagingOptions::CACHEABLE
+            | PagingOptions::USER_ACCESSIBLE
+            | mapping.prot;
+        Arch::virtual_map(
+            self.get_page_table() as u64,
+            vaddr as u64,
+            private_paddr as u64,
+            permissions,
+        );
         Ok(true)
     }
 }
@@ -274,30 +376,5 @@ impl VirtualMemory {
     fn invlpg(&self, vaddr: usize) {
         Arch::virtual_unmap_no_dealloc(self.page_table as u64, vaddr as u64);
         Arch::shootdown_tlbs(self.page_table as u64, vaddr, Arch::PAGE_SIZE);
-    }
-
-    fn vmap_write(&self, vaddr: usize, paddr: usize) {
-        Arch::virtual_map(
-            self.page_table as u64,
-            vaddr as u64,
-            paddr as u64,
-            PagingOptions::PRESENT
-                | PagingOptions::CACHEABLE
-                | PagingOptions::WRITABLE
-                | PagingOptions::USER_ACCESSIBLE
-                | PagingOptions::EXECUTABLE,
-        );
-    }
-
-    fn vmap_read(&self, vaddr: usize, paddr: usize) {
-        Arch::virtual_map(
-            self.page_table as u64,
-            vaddr as u64,
-            paddr as u64,
-            PagingOptions::PRESENT
-                | PagingOptions::CACHEABLE
-                | PagingOptions::USER_ACCESSIBLE
-                | PagingOptions::EXECUTABLE,
-        );
     }
 }

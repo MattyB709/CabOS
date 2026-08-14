@@ -69,7 +69,7 @@ use crate::{
         fake::{FAKE, Fake},
         vfs::VFS,
     },
-    memory::{heap::init_malloc, virtual_memory_2::VirtualMemory},
+    memory::{heap::init_malloc, virtual_memory::PagingOptions, virtual_memory_2::VirtualMemory},
     mp::{CORE_ID, MP_STAGE, MPStage, init_cpu_local_table},
     print::{StackTrace, init_tty, kprintln},
     process::{Process, init_pid_allocator},
@@ -113,19 +113,21 @@ fn usual_main() {
     let ext2 = Ext2::new_from_block_devices(&mut block_devices)
         .expect("ext2 filesystem not found on attached block devices");
     drop(block_devices);
-    VFS.mount(ext2.clone(), &["/"])
+    VFS.mount(ext2, &["/"])
         .expect("failed to mount ext2 filesystem");
     let process = Process::new().expect("failed to create process");
     let root = VFS.get_root().expect("failed to get vfs node");
     let node = root.lookup("doomgeneric-cabos").unwrap();
     let start_address = ElfLoader::load(node, &process).expect("Failed to load ELF file.");
+    // TODO allow for stack growth
+    let stack_size = 4096 * 10;
     let stack = process
         .virtual_memory
-        .mmap(None, 4096 * 4, false, None)
+        .mmap(None, stack_size, PagingOptions::WRITABLE, false, None)
         .unwrap();
     let argc = 3;
     let argv = vec!["doomgeneric-cabos", "-iwad", "./DOOM1.WAD"];
-    let new_stack = Arch::setup_stack((stack + 4096 * 4) as u64, &process, argc, &argv, &[])
+    let new_stack = Arch::setup_stack((stack + stack_size) as u64, &process, argc, &argv, &[])
         .expect("Failed to set up stack.");
     spawn_user_thread(&process, start_address as usize, (new_stack) as usize);
     loop {}

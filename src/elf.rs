@@ -1,6 +1,14 @@
 use alloc::sync::Arc;
 
-use crate::{Arch, ArchTrait, fs::vfs::VNode, print::kprintln, process::Process};
+use bitflags::bitflags;
+
+use crate::{
+    Arch, ArchTrait,
+    fs::vfs::VNode,
+    memory::{virtual_memory::PagingOptions, virtual_memory_2::FileMapping},
+    print::kprintln,
+    process::Process,
+};
 
 mod eh_constants {
     pub const EI_MAG: [u8; 4] = [0x7f, b'E', b'L', b'F'];
@@ -33,6 +41,14 @@ mod ph_constants {
     pub const PT_GNU_RELRO: u32 = 0x6474e552;
     pub const PT_GNU_PROPERTY: u32 = 0x6474e553;
     // TODO: handle more? What else do we want?
+}
+
+bitflags! {
+    struct PhPagePermissions: u32 {
+        const PF_R = 0b100;
+        const PF_W = 0b010;
+        const PF_X = 0b001;
+    }
 }
 
 #[repr(C, packed)]
@@ -235,7 +251,6 @@ impl ElfLoader {
             let ph = ProgramHeader::parse(&ph_buffer, 0);
 
             let vm = &process.virtual_memory;
-            let inode_key = file.get_inode_key().map_err(|_| ElfError::InodeKeyError)?;
 
             match ph.p_type {
                 ph_constants::PT_LOAD => {
@@ -243,6 +258,15 @@ impl ElfLoader {
                     let filesz = ph.p_filesz as usize;
                     let vaddr = ph.p_vaddr as usize;
                     let offset = ph.p_offset as usize;
+                    let page_permissions = PhPagePermissions::from_bits(ph.p_flags)
+                        .ok_or(ElfError::EHInvalidProgramHeader)?;
+                    let mut prot = PagingOptions::empty();
+                    if page_permissions.contains(PhPagePermissions::PF_W) {
+                        prot |= PagingOptions::WRITABLE;
+                    }
+                    if page_permissions.contains(PhPagePermissions::PF_X) {
+                        prot |= PagingOptions::EXECUTABLE;
+                    }
 
                     // in reality the check here needs to be that they have the same offset relative to p_align,
                     // but for simplicity we just need them to be page aligned so we can map their offsets correctly
@@ -257,14 +281,20 @@ impl ElfLoader {
                     let offset_rounded = offset & !(Arch::PAGE_SIZE - 1);
                     let padding = offset - offset_rounded;
                     let map_size = memsz + padding;
+                    let fm = FileMapping {
+                        vnode: file.clone(),
+                        file_offset: offset_rounded,
+                        file_length: Some(filesz + padding),
+                    };
 
                     vm.mmap(
-                        Some((inode_key, offset_rounded, Some(filesz + padding))),
-                        map_size.div_ceil(Arch::PAGE_SIZE) * Arch::PAGE_SIZE, // Round up.
+                        Some(fm),
+                        map_size.div_ceil(Arch::PAGE_SIZE) * Arch::PAGE_SIZE,
+                        prot,
                         false,
                         Some(vaddr_rounded),
                     )
-                    .map_err(|_| ElfError::MmapError)?;
+                    .map_err(|e| {crate::print::kprintln!("{}", e); ElfError::MmapError})?;
                 }
                 ph_constants::PT_NOTE => {
                     // Parse notes if needed later.
@@ -284,7 +314,7 @@ impl ElfLoader {
                     // TODO: handle other GNU properties.
                     // Stuff about CPU/ABI/security or something.
                 }
-                ph_constants::PT_TLS => {}
+                ph_constants::PT_TLS => {} // used for auxv; currently unsupported
                 _ => {
                     // TODO: handle other types. Ignore for now. Uncomment for type.
                     let segment_type = ph.p_type;

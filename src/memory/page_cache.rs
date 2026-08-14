@@ -23,6 +23,10 @@ impl PageCache {
         Ok(paddr)
     }
 
+    pub fn find_page(&self, key: &PageKey) -> Option<usize> {
+        self.map.get(key).copied()
+    }
+
     pub fn get_page(&mut self, key: &PageKey) -> Result<usize, &'static str> {
         match self.map.get_mut(key) {
             Some(paddr) => Ok(*paddr),

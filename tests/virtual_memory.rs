@@ -11,8 +11,9 @@ kernel_common::integration_test!({
         devices::discovery::BLOCK_DEVICES,
         fs::{
             ext2::Ext2,
-            vfs::{Filesystem, INodeKey, INodeType, VFS},
+            vfs::{Filesystem, INodeType, VFS},
         },
+        memory::{virtual_memory::PagingOptions, virtual_memory_2::FileMapping},
         print::kprintln,
         process::Process,
         sync::MutexLike,
@@ -20,13 +21,12 @@ kernel_common::integration_test!({
 
     static LATCH: AtomicU64 = AtomicU64::new(0);
 
-    fn file(name: &str) -> INodeKey {
-        VFS.get_root()
-            .unwrap()
-            .lookup(name)
-            .unwrap()
-            .get_inode_key()
-            .unwrap()
+    fn file(name: &str, file_length: Option<usize>) -> FileMapping {
+        FileMapping {
+            vnode: VFS.get_root().unwrap().lookup(name).unwrap(),
+            file_offset: 0,
+            file_length,
+        }
     }
 
     fn test01() {
@@ -35,11 +35,23 @@ kernel_common::integration_test!({
         Process::run(process.clone(), move || {
             let x = process
                 .virtual_memory
-                .mmap(Some((file("cat"), 0, None)), Arch::PAGE_SIZE, true, None)
+                .mmap(
+                    Some(file("cat", None)),
+                    Arch::PAGE_SIZE,
+                    PagingOptions::WRITABLE,
+                    true,
+                    None,
+                )
                 .unwrap();
             let y = process
                 .virtual_memory
-                .mmap(Some((file("cat"), 0, None)), Arch::PAGE_SIZE, true, None)
+                .mmap(
+                    Some(file("cat", None)),
+                    Arch::PAGE_SIZE,
+                    PagingOptions::WRITABLE,
+                    true,
+                    None,
+                )
                 .unwrap();
             assert!(x != y);
             unsafe {
@@ -61,13 +73,20 @@ kernel_common::integration_test!({
         Process::run(process.clone(), move || {
             let x = process
                 .virtual_memory
-                .mmap(Some((file("cats"), 0, None)), Arch::PAGE_SIZE, true, None)
+                .mmap(
+                    Some(file("cats", None)),
+                    Arch::PAGE_SIZE,
+                    PagingOptions::WRITABLE,
+                    true,
+                    None,
+                )
                 .unwrap();
             let y = process
                 .virtual_memory
                 .mmap(
-                    Some((file("cats"), 0, Some(Arch::PAGE_SIZE + 2))),
+                    Some(file("cats", Some(Arch::PAGE_SIZE + 2))),
                     Arch::PAGE_SIZE * 3,
+                    PagingOptions::WRITABLE,
                     false,
                     None,
                 )
@@ -77,7 +96,7 @@ kernel_common::integration_test!({
                 // COW for first page
                 assert!(*(y as *const u8) == b'c');
                 *(x as *mut u8) = b'b';
-                assert!(*(y as *const u8) == b'b');
+                assert!(*(y as *const u8) == b'c');
                 *(y as *mut u8) = b'l';
                 assert!(*(x as *const u8) == b'b');
                 *(x as *mut u8) = b'c';
@@ -109,7 +128,7 @@ kernel_common::integration_test!({
         Process::run(process.clone(), move || {
             let x = process
                 .virtual_memory
-                .mmap(None, Arch::PAGE_SIZE, false, None)
+                .mmap(None, Arch::PAGE_SIZE, PagingOptions::WRITABLE, false, None)
                 .unwrap();
             unsafe {
                 *(x as *mut u8) = b'd';

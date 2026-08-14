@@ -86,7 +86,7 @@ pub fn sys_clock_gettime(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64
         tv_sec: seconds as i64,
         tv_nsec: nanos as i64,
     };
-    if ctx.is_user_address(timespec_ptr) 
+    if ctx.is_user_address(timespec_ptr)
         && ctx.is_user_address(timespec_ptr + (size_of::<Timespec>() - 1) as u64)
         && copy_to_user(
             thread.process.get().unwrap(),
