@@ -171,7 +171,7 @@ kernel_common::integration_test!({
     cats.write_unaligned(0, "cats".repeat(Arch::PAGE_SIZE).as_bytes())
         .unwrap();
 
-    let _ = VFS.mount(fs, &["/"]).unwrap();
+    VFS.set_root(fs).unwrap();
     test01();
     test02();
     test03();

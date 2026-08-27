@@ -34,7 +34,7 @@ kernel_common::integration_test!({
         .expect("ext2 filesystem not found on attached block devices");
     drop(block_devices);
 
-    let _fs_id = VFS.mount(ext2.clone(), &["/"]);
+    VFS.set_root(ext2).expect("failed to set root filesystem");
 
     kprintln!("Mounted ext2 from testfs");
 

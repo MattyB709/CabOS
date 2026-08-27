@@ -5,7 +5,7 @@ use crate::{
     arch::{Arch, ArchTrait},
     fs::{
         file::File,
-        vfs::{FsError, INodeType, VFS},
+        vfs::{FsError, INodeType, VFS, traverse_path},
     },
     memory::virtual_memory::{copy_from_user, copy_to_user},
     print::{kprint, kprintln},
@@ -199,8 +199,7 @@ pub fn do_sys_openat(
 ) -> u64 {
     let pathname = match read_user_string(pathname_ptr, thread, ctx) {
         Ok(s) => s,
-        Err(s) => {
-            kprintln!("{}", s);
+        Err(_) => {
             return -1i64 as u64;
         }
     };
@@ -227,55 +226,30 @@ pub fn do_sys_openat(
         }
     };
 
-    let components: Vec<&str> = pathname.split('/').filter(|s| !s.is_empty()).collect();
-    let mut current = start_node;
-
-    if components.is_empty() {
-        let file = Arc::new(File::new(current));
-        let mut fd_table = thread.process.get().unwrap().fd_table.lock();
-        let mut fd = 3;
-        // TODO this should really just be an array of option<file> instead of a btree map
-        while fd_table.contains_key(&fd) {
-            fd += 1;
-        }
-        fd_table.insert(fd, file);
-        return fd as u64;
-    }
-
-    for &comp in &components[..components.len() - 1] {
-        if comp == "dev" {
-            // TODO implement actual path traversal
-            current = VFS
-                .partial_lookup(
-                    &VFS.get_root().expect("vfs should have root"),
-                    &["/", "dev"],
-                )
-                .expect("mount traversal to /dev failed");
-            continue;
-        }
-        match current.lookup(comp) {
-            Ok(next) => current = next,
-            Err(err) => {
-                kprintln!("err: {:?}", err);
-                return -1i64 as u64;
-            }
-        }
-    }
-
-    let last_comp = components.last().unwrap();
-    let vnode = match current.lookup(last_comp) {
+    let vnode = match traverse_path(start_node.clone(), &pathname) {
         Ok(vnode) => vnode,
         Err(FsError::NotFound) if (flags & O_CREAT) != 0 => {
-            match current.create_child(last_comp, INodeType::File) {
-                Ok(vnode) => vnode,
-                Err(_) => {
-                    return -1i64 as u64;
+            let (parent_path, name) = match pathname.rsplit_once('/') {
+                Some((parent_path, name)) if !name.is_empty() => (parent_path, name),
+                None => ("", pathname.as_str()),
+                _ => return -1i64 as u64,
+            };
+
+            let parent = if parent_path.is_empty() {
+                start_node
+            } else {
+                match traverse_path(start_node, parent_path) {
+                    Ok(parent) => parent,
+                    Err(_) => return -1i64 as u64,
                 }
+            };
+
+            match parent.create_child(name, INodeType::File) {
+                Ok(vnode) => vnode,
+                Err(_) => return -1i64 as u64,
             }
         }
-        Err(_) => {
-            return -1i64 as u64;
-        }
+        Err(_) => return -1i64 as u64,
     };
 
     let file = Arc::new(File::new(vnode));
@@ -308,7 +282,7 @@ fn ioctl_errno_from_fs_error(err: FsError) -> u64 {
         FsError::WriteError | FsError::ReadError | FsError::Corrupted(_) | FsError::Other(_) => {
             errno(EIO)
         }
-        FsError::AlreadyExists | FsError::MountAlreadyExists => errno(EEXIST),
+        FsError::AlreadyExists => errno(EEXIST),
     }
 }
 

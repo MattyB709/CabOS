@@ -18,8 +18,9 @@ kernel_common::integration_test!({
         fs::{
             dev::{DEV, DeviceBackend},
             ext2::Ext2,
-            vfs::VFS,
+            vfs::{VFS, traverse_path},
         },
+        mount_system_filesystems,
         print::kprintln,
         sync::MutexLike,
     };
@@ -57,7 +58,8 @@ kernel_common::integration_test!({
         .expect("ext2 filesystem not found on attached block devices");
     drop(block_devices);
 
-    let _ = VFS.mount(ext2.clone(), &["/"]).unwrap();
+    VFS.set_root(ext2).unwrap();
+    mount_system_filesystems();
 
     // Register the device at /dev/null_test.
     let dev = DEV.get().expect("DEV not initialized");
@@ -67,9 +69,7 @@ kernel_common::integration_test!({
 
     // Reach /dev via VFS mount traversal, then look up the device inode by name.
     let root = VFS.get_root().expect("VFS root not set");
-    let dev_root = VFS
-        .partial_lookup(&root, &["/", "dev"])
-        .expect("mount traversal to /dev failed");
+    let dev_root = traverse_path(root, "/dev").expect("mount traversal to /dev failed");
     let null_node = dev_root.lookup("null").expect("/dev/null not found");
     kprintln!("found /dev/null via VFS");
 

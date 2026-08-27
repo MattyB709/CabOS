@@ -32,7 +32,7 @@ pub mod sync;
 pub mod syscall;
 pub mod thread;
 extern crate alloc;
-use alloc::{sync::Arc, vec};
+use alloc::vec;
 use core::{
     hint::spin_loop,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -67,7 +67,7 @@ use crate::{
         dev::{DEV, Dev, register_devices},
         ext2::Ext2,
         fake::{FAKE, Fake},
-        vfs::VFS,
+        vfs::{INodeType, VFS},
     },
     memory::{heap::init_malloc, virtual_memory::PagingOptions, virtual_memory_2::VirtualMemory},
     mp::{CORE_ID, MP_STAGE, MPStage, init_cpu_local_table},
@@ -107,14 +107,33 @@ pub trait KernelWorkTrait {
     fn work() -> ();
 }
 
+pub fn mount_system_filesystems() {
+    let root = VFS.get_root().expect("failed to get root");
+    let _ = root.create_child("fake", INodeType::Directory);
+    let _ = root.create_child("dev", INodeType::Directory);
+    let fake_node = root
+        .lookup("fake")
+        .expect("failed to lookup fake entry in root");
+    let dev_node = root
+        .lookup("dev")
+        .expect("failed to lookup dev entry in root");
+    VFS.mount(
+        fake_node,
+        FAKE.get().expect("failed to get fake filesystem").clone(),
+    )
+    .expect("failed to mount fake filesystem");
+    VFS.mount(dev_node, DEV.get().expect("failed to get devfs").clone())
+        .expect("failed to mount dev filesystem");
+}
+
 fn usual_main() {
     kprintln!("Entered kernel");
     let mut block_devices = BLOCK_DEVICES.lock();
     let ext2 = Ext2::new_from_block_devices(&mut block_devices)
         .expect("ext2 filesystem not found on attached block devices");
     drop(block_devices);
-    VFS.mount(ext2, &["/"])
-        .expect("failed to mount ext2 filesystem");
+    VFS.set_root(ext2).expect("failed to set root filesystem");
+    mount_system_filesystems();
     let process = Process::new().expect("failed to create process");
     let root = VFS.get_root().expect("failed to get vfs node");
     let node = root.lookup("doomgeneric-cabos").unwrap();
@@ -130,7 +149,6 @@ fn usual_main() {
     let new_stack = Arch::setup_stack((stack + stack_size) as u64, &process, argc, &argv, &[])
         .expect("Failed to set up stack.");
     spawn_user_thread(&process, start_address as usize, (new_stack) as usize);
-    loop {}
 }
 
 pub struct KernelWork;
@@ -202,10 +220,8 @@ pub fn system_init<Work: KernelWorkTrait>() -> ! {
     init_pid_allocator();
 
     VirtualMemory::init();
-    let fake = Arc::clone(FAKE.call_once(Fake::new));
-    VFS.mount(fake, &["/", "fake"]).unwrap();
-    let dev = Arc::clone(DEV.call_once(Dev::new));
-    VFS.mount(dev, &["/", "dev"]).unwrap();
+    FAKE.call_once(Fake::new);
+    DEV.call_once(Dev::new);
 
     create_drivers();
     kprintln!("First round of device discovery...");

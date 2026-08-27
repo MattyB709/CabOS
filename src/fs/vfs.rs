@@ -1,18 +1,17 @@
-use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc, vec::Vec};
+// ideally this would be a hash map, but we'd need another external library or in-house impl for that
+use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc};
 use core::sync::atomic::{AtomicUsize, Ordering};
+
+use spin::Once;
 
 use crate::{
     memory::virtual_memory_2::MapBacking,
     sync::{IntMutex, MutexLike},
 };
 
-// TODO we probably don't want to cache on both the fs and the VFS level,
-type INodeCache = BTreeMap<usize, BTreeMap<usize, Arc<dyn VNode>>>;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FsError {
     PathMalformed,
-    MountAlreadyExists,
     NotFound,
     AlreadyExists,
     NoSpace,
@@ -27,145 +26,141 @@ pub enum FsError {
 
 pub struct VFS {
     filesystems: IntMutex<BTreeMap<usize, Arc<dyn Filesystem>>>,
-    inode_cache: IntMutex<INodeCache>,
     filesystem_id_counter: AtomicUsize,
-    mount_list: IntMutex<Vec<(Vec<&'static str>, usize)>>,
+    mount_points: IntMutex<BTreeMap<INodeKey, Arc<dyn VNode>>>,
+    reverse_mount_points: IntMutex<BTreeMap<INodeKey, Arc<dyn VNode>>>, // used to map from a mountpoint to its underlying vnode
+    root: Once<Arc<dyn VNode>>,
 }
 
 pub static VFS: VFS = VFS {
     filesystems: IntMutex::new(BTreeMap::new()),
-    inode_cache: IntMutex::new(BTreeMap::new()),
     filesystem_id_counter: AtomicUsize::new(0),
-    mount_list: IntMutex::new(Vec::new()),
+    mount_points: IntMutex::new(BTreeMap::new()),
+    reverse_mount_points: IntMutex::new(BTreeMap::new()),
+    root: Once::new(),
 };
 
 impl VFS {
-    // not a great mount yet, but this can be improved later for proper traversal.
-    pub fn mount(
-        &self,
-        filesystem: Arc<dyn Filesystem>,
-        path: &[&'static str],
-    ) -> Result<usize, FsError> {
-        // Lock everything down
-        let mut mount_list = self.mount_list.lock();
-        let mut inode_cache = self.inode_cache.lock();
+    fn register_filesystem(&self, fs: &Arc<dyn Filesystem>) -> usize {
         let mut filesystems = self.filesystems.lock();
-        let filesystem_id = self.filesystem_id_counter.fetch_add(1, Ordering::SeqCst);
-
-        // Do not mount here if something already exists
-        if self.find_mount(path, &mount_list).is_some() {
-            return Err(FsError::MountAlreadyExists);
-        }
-
-        // Create the mount
-        let mut mount = (Vec::new(), filesystem_id);
-        for p in path {
-            mount.0.push(*p);
-        }
-        mount_list.push(mount);
-        filesystem.set_filesystem_id(Some(filesystem_id));
-        filesystems.insert(filesystem_id, filesystem);
-        inode_cache.insert(filesystem_id, BTreeMap::new());
-        Ok(filesystem_id)
-    }
-
-    pub fn unmount(&self, filesystem_id: usize) {
-        // Lock everything down
-        let mut mount_list = self.mount_list.lock();
-        let mut inode_cache = self.inode_cache.lock();
-        let mut filesystems = self.filesystems.lock();
-        let mut mount_index = None;
-
-        // Delete the mount
-        for i in 0..mount_list.len() {
-            if mount_list[i].1 == filesystem_id {
-                mount_index = Some(i);
-                break;
+        let id = match fs.get_filesystem_id() {
+            Ok(id) => id,
+            Err(_) => {
+                let id = self.filesystem_id_counter.fetch_add(1, Ordering::SeqCst);
+                fs.set_filesystem_id(Some(id));
+                id
             }
-        }
-        if let Some(index) = mount_index {
-            mount_list.swap_remove(index);
-        } else {
-            panic!("This should never happen");
-        }
-        if let Some(fs) = filesystems.remove(&filesystem_id) {
-            fs.set_filesystem_id(None);
-        }
-        inode_cache.remove(&filesystem_id);
+        };
+        filesystems.entry(id).or_insert_with(|| fs.clone());
+        id
     }
 
     pub fn get_inode(&self, key: &INodeKey) -> Result<Arc<dyn VNode>, FsError> {
-        let mut inode_cache = self.inode_cache.lock();
-        let map = inode_cache
-            .get_mut(&key.filesystem_id)
-            .ok_or(FsError::NotFound)?;
-        if let Some(inode) = map.get(&key.inumber) {
-            return Ok(Arc::clone(inode));
-        }
         let inode = self
             .filesystems
             .lock()
             .get(&key.filesystem_id)
             .ok_or(FsError::NotFound)?
             .get_inode(key.inumber)?;
-        map.insert(key.inumber, Arc::clone(&inode));
         Ok(inode)
     }
 
+    pub fn set_root(&self, fs: Arc<dyn Filesystem>) -> Result<(), FsError> {
+        self.register_filesystem(&fs);
+        let root_fs = fs.get_root()?;
+        self.root.call_once(|| root_fs.clone());
+        Ok(())
+    }
+
     pub fn get_root(&self) -> Option<Arc<dyn VNode>> {
-        let mount_list = self.mount_list.lock();
-        let filesystems = self.filesystems.lock();
-        let fs_index = self.find_mount(&["/"], &mount_list)?;
-        let fs = filesystems.get(&fs_index)?;
-        let root = fs.get_root();
-        if let Ok(root) = root {
-            return Some(Arc::clone(&root));
-        }
-        None
+        self.root.get().cloned()
     }
 
-    // This isn't a full path traversing algorithm. All it does is use
-    // the current full path to traverse a mount point if it is
-    // possible.
-    pub fn partial_lookup(
+    pub fn mount(
         &self,
-        node: &Arc<dyn VNode>,
-        path: &[&'static str],
-    ) -> Result<Arc<dyn VNode>, FsError> {
-        let mount_list = self.mount_list.lock();
-        let filesystems = self.filesystems.lock();
-        let mount = self.find_mount(path, &mount_list);
-        if let Some(fs_index) = mount {
-            let fs = filesystems.get(&fs_index).ok_or(FsError::NotFound)?;
-            return fs.get_root();
+        mountpoint: Arc<dyn VNode>,
+        fs: Arc<dyn Filesystem>,
+    ) -> Result<(), FsError> {
+        if mountpoint.get_type() != INodeType::Directory {
+            return Err(FsError::InvalidOperation);
         }
-        node.lookup(path.last().ok_or(FsError::PathMalformed)?)
+
+        self.register_filesystem(&fs);
+
+        let mountpoint_key = mountpoint.get_inode_key()?;
+        let mount_root = fs.get_root()?;
+
+        // this insert replaces if anything was there. We ignore it under the assumption the kernel
+        // will not try to mount twice on the same underlying vnode, and userland will not have access
+        // to the underlying mountpoint
+        self.mount_points
+            .lock()
+            .insert(mountpoint_key, mount_root.clone());
+        // TODO inserting a mount should be atomic wrt both mount and reverse mount maps
+        self.reverse_mount_points
+            .lock()
+            .insert(mount_root.get_inode_key()?, mountpoint); 
+        Ok(())
     }
 
-    fn find_mount(
-        &self,
-        path: &[&'static str],
-        mount_list: &Vec<(Vec<&'static str>, usize)>,
-    ) -> Option<usize> {
-        for mount in mount_list.iter() {
-            if mount.0.len() != path.len() {
-                continue;
-            }
-            let mut equals = true;
-            for (i, p) in path.iter().enumerate() {
-                if *p != mount.0[i] {
-                    equals = false;
-                    break;
-                }
-            }
-            if !equals {
-                continue;
-            }
-            return Some(mount.1);
+    // `mountpoint` is the vnode in the parent filesystem that is covered by the mount.
+    pub fn unmount(&self, mountpoint: Arc<dyn VNode>) -> Result<(), FsError> {
+        let mountpoint_key = mountpoint.get_inode_key()?;
+        let mut mount_points = self.mount_points.lock();
+        let mount_root = mount_points
+            .get(&mountpoint_key)
+            .cloned()
+            .ok_or(FsError::NotFound)?;
+        let mount_root_key = mount_root.get_inode_key()?;
+
+        let mut reverse_mount_points = self.reverse_mount_points.lock();
+        if !reverse_mount_points.contains_key(&mount_root_key) {
+            return Err(FsError::Corrupted(
+                "mount point is missing its reverse mapping".into(),
+            ));
         }
-        None
+
+        mount_points.remove(&mountpoint_key);
+        reverse_mount_points.remove(&mount_root_key);
+        Ok(())
     }
 }
+
+pub fn traverse_path(start_node: Arc<dyn VNode>, path: &str) -> Result<Arc<dyn VNode>, FsError> {
+    if path.is_empty() {
+        return Err(FsError::PathMalformed);
+    }
+    let components = path.split('/').filter(|s| !s.is_empty());
+    let start_mount = VFS
+        .mount_points
+        .lock()
+        .get(&start_node.get_inode_key()?)
+        .cloned();
+    let mut node = start_mount.unwrap_or(start_node);
+
+    for component in components {
+        if component == "." {
+            continue;
+        } else if component == ".." {
+            let key = node.get_inode_key()?;
+            node = match VFS.reverse_mount_points.lock().get(&key).cloned() {
+                Some(mount) => mount.lookup(component)?,
+                None => node.lookup(component)?,
+            }
+        } else {
+            let child = node.lookup(component)?;
+            let key = child.get_inode_key()?;
+            node = match VFS.mount_points.lock().get(&key).cloned() {
+                Some(mount) => mount,
+                None => child,
+            }
+        }
+    }
+
+    Ok(node)
+}
+
+// general path for traversing a path, including mountpoints. Returns both the VNode and its parent.
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct INodeKey {
@@ -221,7 +216,6 @@ pub trait VNode: Send + Sync {
     fn write_page(&self, _physical_address: usize, _offset: usize) -> Result<usize, FsError> {
         Err(FsError::NotImplemented)
     }
-
     // Directory
     fn lookup(&self, _target: &str) -> Result<Arc<dyn VNode>, FsError> {
         Err(FsError::NotImplemented)
@@ -230,7 +224,7 @@ pub trait VNode: Send + Sync {
     fn add_entry(
         &self,
         _target: &str,
-        _inumber: usize,
+        _inumber: usize, // TODO this shouldn't take inumber
         _inode_type: INodeType,
     ) -> Result<(), FsError> {
         Err(FsError::NotImplemented)
@@ -257,7 +251,8 @@ pub trait VNode: Send + Sync {
     }
 
     // page cache needs to know filesystem id for InodeKey, this provides a way to get it. An Inode should store a reference to
-    // whatever fs it's on. Maybe this could be done differently.
+    // whatever fs it's on.
+    // TODO this should probably be reworked to never throw an error
     fn get_inode_key(&self) -> Result<INodeKey, FsError> {
         Err(FsError::NotImplemented)
     }

@@ -8,7 +8,10 @@ kernel_common::integration_test!({
 
     use kernel_common::{
         devices::discovery::BLOCK_DEVICES,
-        fs::{ext2::Ext2, vfs::VFS},
+        fs::{
+            ext2::Ext2,
+            vfs::{VFS, traverse_path},
+        },
         sync::MutexLike,
     };
     let mut block_devices = BLOCK_DEVICES.lock();
@@ -16,13 +19,11 @@ kernel_common::integration_test!({
         .expect("ext2 filesystem not found on attached block devices");
     drop(block_devices);
 
-    let _ = VFS.mount(ext2.clone(), &["/"]).unwrap();
-    let _ = VFS.mount(ext2.clone(), &["/", "cat"]).unwrap();
+    VFS.set_root(ext2.clone()).unwrap();
     let root = VFS.get_root().unwrap();
-    let mut path = alloc::vec!["/", "cat"];
-    let cat = VFS.partial_lookup(&root, &path).unwrap();
-    path.push("hello.txt");
-    let hello = VFS.partial_lookup(&cat, &path).unwrap();
+    let cat = root.lookup("cat").unwrap();
+    VFS.mount(cat, ext2).unwrap();
+    let hello = traverse_path(root, "/cat/hello.txt").unwrap();
     let mut buffer = alloc::vec![0u8; 1024];
     hello.read_unaligned(0, &mut buffer).unwrap();
     assert!(buffer[0] == b'e');

@@ -8,7 +8,11 @@ kernel_common::integration_test!({
 
     use kernel_common::{
         devices::discovery::BLOCK_DEVICES,
-        fs::{ext2::Ext2, vfs::VFS},
+        fs::{
+            ext2::Ext2,
+            vfs::{VFS, traverse_path},
+        },
+        mount_system_filesystems,
         print::kprintln,
         sync::MutexLike,
     };
@@ -18,13 +22,12 @@ kernel_common::integration_test!({
         .expect("ext2 filesystem not found on attached block devices");
     drop(block_devices);
 
-    let _ = VFS.mount(ext2.clone(), &["/"]).unwrap();
+    VFS.set_root(ext2).unwrap();
+    mount_system_filesystems();
 
     // Reach /dev via VFS mount traversal, then look up the device inode by name.
     let root = VFS.get_root().expect("VFS root not set");
-    let dev_root = VFS
-        .partial_lookup(&root, &["/", "dev"])
-        .expect("mount traversal to /dev failed");
+    let dev_root = traverse_path(root, "/dev").expect("mount traversal to /dev failed");
     let _ = dev_root.lookup("ps2kbd").expect("/dev/ps2kbd not found");
     kprintln!("found /dev/ps2kbd via VFS");
 });
