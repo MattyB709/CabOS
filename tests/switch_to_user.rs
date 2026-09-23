@@ -28,11 +28,7 @@ kernel_common::integration_test!({
         .virtual_memory
         .mmap(None, 4096 * 4, PagingOptions::WRITABLE, false, None)
         .unwrap();
-    spawn_user_thread(
-        &process,
-        start_address as usize,
-        (stack + 4096 * 4) as usize,
-    );
+    spawn_user_thread(&process, start_address as usize, stack + 4096 * 4);
     let exit_code = process.exit_code.get();
     if exit_code == 0 {
         kprintln!("User thread exited successfully.");

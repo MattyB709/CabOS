@@ -126,6 +126,7 @@ pub fn mount_system_filesystems() {
         .expect("failed to mount dev filesystem");
 }
 
+#[cfg_attr(test, allow(dead_code))]
 fn usual_main() {
     kprintln!("Entered kernel");
     let mut block_devices = BLOCK_DEVICES.lock();

@@ -84,7 +84,7 @@ impl ArchTrait for Arch {
         let mut sp = sp;
         assert!(argv.len() as u64 == argc);
         assert!(
-            sp % 16 == 0,
+            sp.is_multiple_of(16),
             "Stack pointer must be 16-byte aligned on aarch64"
         );
         // write using the kernel virtual address to not deal with user space mappings
@@ -98,7 +98,7 @@ impl ArchTrait for Arch {
             sp -= (bytes.len() + 1) as u64; // +1 for null terminator
             copy_to_user(process, sp, bytes).ok()?;
             copy_to_user(process, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
-            arg_ptrs.push(sp as u64);
+            arg_ptrs.push(sp);
         }
 
         for env in envp.iter() {
@@ -106,7 +106,7 @@ impl ArchTrait for Arch {
             sp -= (bytes.len() + 1) as u64; // +1 for null terminator
             copy_to_user(process, sp, bytes).ok()?;
             copy_to_user(process, sp + bytes.len() as u64, &[0]).ok()?; // null terminator
-            env_ptrs.push(sp as u64);
+            env_ptrs.push(sp);
         }
 
         let num_words = arg_ptrs.len() + env_ptrs.len() + 5; // 5 for the two null terminators for envp and argv, two words for auxv, and argc
@@ -131,7 +131,7 @@ impl ArchTrait for Arch {
         copy_to_user(process, temp_sp, &[0; 8]).ok()?; // NULL terminator for envp
         temp_sp += 8;
         copy_to_user(process, temp_sp, &[0; 16]).ok()?; // NULL terminator for auxv
-        return Some(sp as u64);
+        Some(sp)
     }
 
     fn sleep_core() {

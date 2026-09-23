@@ -31,7 +31,9 @@ kernel_common::integration_test!({
         FINISHED.store(true, Ordering::Release);
     });
 
-    while !FINISHED.load(Ordering::Acquire) {}
+    while !FINISHED.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
 
     let minimum_ticks = SLEEP_MS.saturating_mul(TIMER_HZ).div_ceil(1_000);
     let elapsed_ticks = ELAPSED_TICKS.load(Ordering::Acquire);

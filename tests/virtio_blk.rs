@@ -16,7 +16,7 @@ kernel_common::integration_test!({
         }
     };
 
-    let mut virtio_blk_device = {
+    let virtio_blk_device = {
         let mut block_devices = BLOCK_DEVICES.lock();
         let idx = block_devices
             .iter()

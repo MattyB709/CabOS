@@ -8,7 +8,7 @@ use crate::{
     arch::{Arch, ArchTrait},
     fs::{file::File, vfs::VNode},
     memory::{
-        virtual_memory::{PagingOptions},
+        virtual_memory::PagingOptions,
         virtual_memory_2::{FileMapping, VirtualMemory},
     },
     print::kprintln,
@@ -137,7 +137,6 @@ impl Process {
         fd: i32,
         offset: u64,
     ) -> u64 {
-
         let Some(prot_flags) = ProtectionFlags::from_bits(prot) else {
             return -1i64 as u64;
         };

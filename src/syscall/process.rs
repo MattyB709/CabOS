@@ -75,7 +75,7 @@ pub fn sys_nanosleep(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> Result<
 pub fn sys_clock_gettime(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64 {
     let clock_id = ctx.arg0();
     if clock_id != CLOCK_MONOTONIC as u64 {
-        errno(EINVAL);
+        return errno(EINVAL);
     }
     let timespec_ptr = ctx.arg1();
     let global_ticks = TICKS.read_for(CoreId(0)).load(Ordering::Relaxed);
@@ -91,12 +91,12 @@ pub fn sys_clock_gettime(thread: &Arc<Thread>, ctx: &impl SyscallContext) -> u64
         && copy_to_user(
             thread.process.get().unwrap(),
             timespec_ptr,
-            &timespec.as_bytes(),
+            timespec.as_bytes(),
         )
         .is_ok()
     {
-        return 0;
+        0
     } else {
-        return errno(EFAULT);
+        errno(EFAULT)
     }
 }

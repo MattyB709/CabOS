@@ -3,6 +3,7 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(kernel_common::test_runner)]
 
+#[cfg(target_arch = "x86_64")]
 kernel_common::integration_test!({
     extern crate alloc;
     use alloc::boxed::Box;
@@ -61,3 +62,6 @@ kernel_common::integration_test!({
         kprintln!("IRQ handler did not fire.");
     }
 });
+
+#[cfg(target_arch = "aarch64")]
+kernel_common::integration_test!({});

@@ -294,7 +294,10 @@ impl ElfLoader {
                         false,
                         Some(vaddr_rounded),
                     )
-                    .map_err(|e| {crate::print::kprintln!("{}", e); ElfError::MmapError})?;
+                    .map_err(|e| {
+                        crate::print::kprintln!("{}", e);
+                        ElfError::MmapError
+                    })?;
                 }
                 ph_constants::PT_NOTE => {
                     // Parse notes if needed later.

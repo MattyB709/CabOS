@@ -4,8 +4,8 @@ use limine::{framebuffer::Framebuffer, request::FramebufferRequest};
 
 use super::{CharDevice, CharDeviceError};
 use crate::{
-    devices::{Device, discovery::CHAR_DEVICES},
     arch::{Arch, ArchTrait},
+    devices::{Device, discovery::CHAR_DEVICES},
     memory::{virtual_memory::PagingOptions, virtual_memory_2::MapBacking},
     sync::{IntMutex, MutexLike},
 };
@@ -44,7 +44,7 @@ impl<'a> CharDevice for LimineFramebuffer<'a> {
         let addr = framebuffer.addr();
         // safety: we trust the
         unsafe {
-            let framebuffer_slice = core::slice::from_raw_parts(addr as *const u8, self.length);
+            let framebuffer_slice = core::slice::from_raw_parts(addr.cast_const(), self.length);
             let end = usize::min(offset + buffer.len(), framebuffer_slice.len());
             let bytes_to_read = end - offset;
             buffer[..bytes_to_read].copy_from_slice(&framebuffer_slice[offset..end]);
@@ -56,7 +56,7 @@ impl<'a> CharDevice for LimineFramebuffer<'a> {
         let framebuffer = self.inner.lock();
         let addr = framebuffer.addr();
         unsafe {
-            let framebuffer_slice = core::slice::from_raw_parts_mut(addr as *mut u8, self.length);
+            let framebuffer_slice = core::slice::from_raw_parts_mut(addr, self.length);
             let end = usize::min(offset + buffer.len(), framebuffer_slice.len());
             let bytes_to_write = end - offset;
             framebuffer_slice[offset..end].copy_from_slice(&buffer[..bytes_to_write]);
@@ -71,7 +71,9 @@ impl<'a> CharDevice for LimineFramebuffer<'a> {
     fn prepare_mmap(&self, offset: usize) -> Result<MapBacking, CharDeviceError> {
         let framebuffer = self.inner.lock();
         let addr = framebuffer.addr();
-        let paddr = Arch::get_phys_addr(addr as u64, Arch::get_kernel_address_space()).ok_or(CharDeviceError::Other("Could not get physical address".into()))?;
+        let paddr = Arch::get_phys_addr(addr as u64, Arch::get_kernel_address_space()).ok_or(
+            CharDeviceError::Other("Could not get physical address".into()),
+        )?;
         let length = self.length;
         if offset >= length {
             return Err(CharDeviceError::Other("Offset out of bounds".into()));
@@ -88,11 +90,11 @@ impl Device for LimineFramebuffer<'_> {
         match request {
             FBIO_GET_HEIGHT => {
                 let framebuffer = self.inner.lock();
-                framebuffer.height() as u64
+                framebuffer.height()
             }
             FBIO_GET_PITCH => {
                 let framebuffer = self.inner.lock();
-                framebuffer.pitch() as u64
+                framebuffer.pitch()
             }
             _ => -1i64 as u64,
         }

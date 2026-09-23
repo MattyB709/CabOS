@@ -99,7 +99,7 @@ impl VFS {
         // TODO inserting a mount should be atomic wrt both mount and reverse mount maps
         self.reverse_mount_points
             .lock()
-            .insert(mount_root.get_inode_key()?, mountpoint); 
+            .insert(mount_root.get_inode_key()?, mountpoint);
         Ok(())
     }
 
