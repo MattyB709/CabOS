@@ -1,6 +1,6 @@
 # CabOS
 
-CabOS is a multicore operating system kernel written in Rust. It targets both x86-64 and AArch64 and currently includes userspace processes, virtual memory, an ext2-backed VFS, and a device discovery framework for device tree, ACPI tables, and PCI. 
+CabOS is a multicore operating system kernel written in Rust. It targets both x86-64 and AArch64 and currently includes userspace processes, virtual memory, an ext2-backed VFS, and a device discovery framework for device tree, ACPI tables, and PCI. This repository is a [fork](https://github.com/cs378-s26/common-rust), and it contains changes I made individually to an operating system that I helped build collaboratively, including running DOOM.
 
 ## Requirements
 
