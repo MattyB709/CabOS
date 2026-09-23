@@ -14,15 +14,15 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v4
 
-            - name: Load environment variables
-              run: |
-                  direnv allow .
-                  direnv export gha > "$GITHUB_ENV"
+            - name: Install Nix
+              uses: cachix/install-nix-action@v31
+              with:
+                  github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Run all tests
               run: |
-                  cargo buildtool test --target x86-64
-                  cargo buildtool test --target aarch64
+                  nix develop --command cargo buildtool test --target x86-64
+                  nix develop --command cargo buildtool test --target aarch64
 
             - name: Upload cached testing directory on failure
               if: ${{ failure() }}
