@@ -10,7 +10,7 @@ kernel_common::integration_test!({
         devices::discovery::BLOCK_DEVICES,
         fs::{
             ext2::Ext2,
-            vfs::{VFS, traverse_path},
+            vfs::{INodeType, VFS, traverse_path},
         },
         sync::MutexLike,
     };
@@ -21,7 +21,9 @@ kernel_common::integration_test!({
 
     VFS.set_root(ext2.clone()).unwrap();
     let root = VFS.get_root().unwrap();
-    let cat = root.lookup("cat").unwrap();
+    let cat = root
+        .create_child("cat", INodeType::Directory)
+        .expect("failed to create mountpoint");
     VFS.mount(cat, ext2).unwrap();
     let hello = traverse_path(root, "/cat/hello.txt").unwrap();
     let mut buffer = alloc::vec![0u8; 1024];
