@@ -154,6 +154,27 @@ unsafe extern "C" fn irq_handler_t1(addr: *mut InterruptContext) {
     }
     match context.id as u8 {
         PAGE_FAULT => {
+            let address = unsafe { cr2() };
+            // Capture the interrupted context before fault handling moves to the event thread.
+            // Ordinary demand faults must stay quiet to avoid changing scheduling unnecessarily.
+            if !from_user && address < 4096 {
+                crate::print::kprintln!(
+                    "kernel low-address fault: cr2={:#x} rip={:#x} err={:#x} cs={:#x} rsp={:#x} rbp={:#x} rflags={:#x} core={}",
+                    address,
+                    context.rip,
+                    context.err,
+                    context.cs,
+                    context.rsp,
+                    context.rbp,
+                    context.rflags,
+                    CORE_ID.get().0
+                );
+                // Register order follows the reversed pushes in irq_handler_t0.
+                crate::print::kprintln!(
+                    "regs [r15,r14,r13,r12,r11,r10,r9,r8,rdi,rsi,rbx,rdx,rcx,rax]: {:#x?}",
+                    context.regs
+                );
+            }
             if let Some(code) = PageFaultErrorCode::from_bits(context.err) {
                 // seems like kind of a lot of overhead for interface translation...
                 let mut cause = PageFaultConditions::empty();
@@ -172,14 +193,7 @@ unsafe extern "C" fn irq_handler_t1(addr: *mut InterruptContext) {
                 if code.contains(PageFaultErrorCode::INSTRUCTION_FETCH) {
                     cause.insert(PageFaultConditions::FETCH);
                 }
-                push_event(
-                    Event::PageFault {
-                        cause,
-                        address: unsafe { cr2() },
-                    },
-                    CORE_ID.get(),
-                    false,
-                );
+                push_event(Event::PageFault { cause, address }, CORE_ID.get(), false);
                 unsafe { crate::thread::block_to_idle(context) };
             } else {
                 panic!("hi: {} #{}, cr2={}", context.err, context.id, unsafe {

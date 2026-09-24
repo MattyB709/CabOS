@@ -170,6 +170,17 @@ fn run_with_config(
     let display_name = test_display_name(config_path, test_cfg);
     let cache_paths = cache_paths(config_path, test_cfg.target)?;
     let kernel_path = build_test_binary(test_cfg, release)?;
+    if test_cfg.is_unittest {
+        // Preserve the exact unstripped executable before later builds can replace it.
+        let saved_elf = cache_paths.report.with_extension("elf");
+        fs::copy(&kernel_path, &saved_elf).with_context(|| {
+            format!(
+                "failed to preserve unit test ELF {} as {}",
+                kernel_path.display(),
+                saved_elf.display()
+            )
+        })?;
+    }
     let img_path = build_image_with_tag(
         &(kernel_path.clone(), vec![]),
         release,

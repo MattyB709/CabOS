@@ -5,6 +5,7 @@ on:
     push:
         branches:
             - main
+            - debug/x86-unit-fault
 
 jobs:
     test:
@@ -19,13 +20,18 @@ jobs:
               with:
                   github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
+            - name: Run x86 unit test for fault debugging
+              if: ${{ (github.head_ref || github.ref_name) == 'debug/x86-unit-fault' }}
+              run: nix develop --command cargo buildtool test --target x86-64 --config test_cfgs/unittest/x86-64_unittest_test.json
+
             - name: Run all tests
+              if: ${{ (github.head_ref || github.ref_name) != 'debug/x86-unit-fault' }}
               run: |
                   nix develop --command cargo buildtool test --target x86-64
                   nix develop --command cargo buildtool test --target aarch64
 
-            - name: Upload cached testing directory on failure
-              if: ${{ failure() }}
+            - name: Upload cached testing directory
+              if: ${{ failure() || (always() && (github.head_ref || github.ref_name) == 'debug/x86-unit-fault') }}
               uses: actions/upload-artifact@v4
               with:
                   name: buildtool-cache-testing

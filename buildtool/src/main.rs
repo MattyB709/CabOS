@@ -65,6 +65,9 @@ enum Commands {
         release: bool,
     },
     Test {
+        /// Run only this test config instead of discovering the target's suite.
+        #[arg(long, value_name = "PATH")]
+        config: Option<std::path::PathBuf>,
         #[arg(short = 'r', long)]
         release: bool,
         #[arg(short = 't', long, value_enum, default_value_t = Target::X86_64)]
@@ -91,7 +94,11 @@ fn main() -> Result<()> {
             kvm,
             release,
         } => gdb::run(kvm, release, target)?,
-        Commands::Test { release, target } => test::run_all(release, target)?,
+        Commands::Test {
+            release,
+            target,
+            config,
+        } => test::run_all(release, target, config)?,
         Commands::QemuTest {
             test_cfg_path,
             release,
