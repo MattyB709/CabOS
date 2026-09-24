@@ -293,6 +293,7 @@ impl Mcfg {
     }
 }
 
+// Used by PS/2 support, which is not implemented in this version.
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 struct Fadt {
@@ -451,7 +452,7 @@ pub fn parse_acpi(is_start: bool) -> Option<Vec<DeviceType>> {
     let xsdt = Rsdp::from_address(rsdp_ptr)?.get_xsdt()?;
     let madt = xsdt.parse_madt()?;
     let mcfg = xsdt.parse_mcfg()?;
-    let fadt_ = xsdt.parse_fadt();
+    let fadt = xsdt.parse_fadt();
     let mut matched_devices = Vec::new();
 
     for driver in SYSTEM_DRIVERS.iter() {
@@ -504,16 +505,8 @@ pub fn parse_acpi(is_start: bool) -> Option<Vec<DeviceType>> {
         }
     }
 
-    if let Some(fadt) = fadt_ {
+    if fadt.is_some() {
         kprintln!("Found FADT!");
-        //source: https://elixir.bootlin.com/linux/v7.0.1/source/include/acpi/actbl.h#L261
-        let ps2_enabled = fadt.flags & (1 << 1) != 0;
-        kprintln!("PS2 enabled? {}", ps2_enabled);
-        // TODO fix ps2 to go through normal devfs registration
-        // if ps2_enabled && !is_start {
-        //     #[cfg(target_arch = "x86_64")]
-        //     crate::devices::char::ps2_kb_m::init_ps2().ok()?;
-        // }
     }
     if !is_start {
         kprintln!("PCIE");

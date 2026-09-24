@@ -2,8 +2,6 @@ use alloc::string::String;
 
 use crate::{devices::Device, memory::virtual_memory_2::MapBacking};
 pub mod limine_framebuffer;
-#[cfg(target_arch = "x86_64")]
-pub mod ps2_kb_m;
 pub mod uart_pl011;
 pub mod virtio_input;
 
