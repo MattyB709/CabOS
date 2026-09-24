@@ -174,6 +174,31 @@ unsafe extern "C" fn irq_handler_t1(addr: *mut InterruptContext) {
                     "regs [r15,r14,r13,r12,r11,r10,r9,r8,rdi,rsi,rbx,rdx,rcx,rax]: {:#x?}",
                     context.regs
                 );
+                // Stay within the interrupted kernel stack's current page: do not follow
+                // arbitrary pointers or acquire page-table locks while diagnosing a fault.
+                if context.rsp >= 0xffff800000000000 {
+                    let page = context.rsp & !0xfff;
+                    let mut frame = context.rbp;
+                    for depth in 0..16 {
+                        if frame < context.rsp || frame > page + 4096 - 16 || frame & 7 != 0 {
+                            break;
+                        }
+                        let (next, ret) = unsafe {
+                            let ptr = frame as *const u64;
+                            (ptr.read(), ptr.add(1).read())
+                        };
+                        crate::print::kprintln!(
+                            "fault caller {}: frame={:#x} return={:#x}",
+                            depth,
+                            frame,
+                            ret
+                        );
+                        if next <= frame {
+                            break;
+                        }
+                        frame = next;
+                    }
+                }
             }
             if let Some(code) = PageFaultErrorCode::from_bits(context.err) {
                 // seems like kind of a lot of overhead for interface translation...
