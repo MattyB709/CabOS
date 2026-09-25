@@ -21,9 +21,13 @@ kernel_common::integration_test!({
 
     VFS.set_root(ext2.clone()).unwrap();
     let root = VFS.get_root().unwrap();
-    let cat = root
-        .create_child("cat", INodeType::Directory)
-        .expect("failed to create mountpoint");
+    let cat = if let Ok(node) = root.lookup("cat") {
+        node
+    } else {
+        root.create_child("cat", INodeType::Directory)
+            .expect("failed to create cat dir")
+    };
+
     VFS.mount(cat, ext2).unwrap();
     let hello = traverse_path(root, "/cat/hello.txt").unwrap();
     let mut buffer = alloc::vec![0u8; 1024];
