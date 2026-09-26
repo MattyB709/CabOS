@@ -5,34 +5,36 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
-            - name: Load environment variables
-              run: |
-                  direnv allow .
-                  direnv export gha > "$GITHUB_ENV"
+            - name: Install Rust toolchain
+              uses: actions-rust-lang/setup-rust-toolchain@v1
+              with:
+                  toolchain: nightly-2026-02-24
+                  components: clippy, rust-src
+                  target: x86_64-unknown-none, aarch64-unknown-none
             - uses: giraffate/clippy-action@v1
               with:
                   reporter: "github-pr-review"
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   fail_on_error: true
-                  clippy_flags: --target x86_64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
+                  clippy_flags: --locked --target x86_64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
             - uses: giraffate/clippy-action@v1
               with:
                   reporter: "github-pr-review"
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   fail_on_error: true
-                  clippy_flags: --target aarch64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
+                  clippy_flags: --locked --target aarch64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
             - uses: giraffate/clippy-action@v1
               with:
                   reporter: "github-pr-review"
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   fail_on_error: true
-                  clippy_flags: --tests --target x86_64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
+                  clippy_flags: --locked --tests --target x86_64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
             - uses: giraffate/clippy-action@v1
               with:
                   reporter: "github-pr-review"
                   github_token: ${{ secrets.GITHUB_TOKEN }}
                   fail_on_error: true
-                  clippy_flags: --tests --target aarch64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
+                  clippy_flags: --locked --tests --target aarch64-unknown-none -Zbuild-std=core,alloc -Zpanic-abort-tests
 permissions:
     contents: read
     pull-requests: write

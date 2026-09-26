@@ -38,7 +38,6 @@ impl<T: ParsableFlags> CmdlineParsable for T {
             let id_tok = lexer.next_tok()?;
             let id = id_tok.unwrap_ident()?;
             let Some(item) = T::FLAGS.iter().find(|f| f.name().eq_ignore_ascii_case(id)) else {
-                // TODO
                 return Err(id_tok.make_error(CmdlineErrorCode::UnknownFlag(&[])));
             };
 

@@ -52,7 +52,6 @@ pub enum DeviceType {
 }
 
 pub trait DeviceDiscovery {
-    // TODO: document the responsibilities of the device
     // When a node matches, return all device handles it should contribute.
     fn am_i_this(&self, node: DeviceNode) -> Option<Vec<DeviceType>>;
 

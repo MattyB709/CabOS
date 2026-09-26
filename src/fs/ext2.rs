@@ -931,7 +931,6 @@ impl VNode for FNode {
     }
 
     // TODO implement some kind of check to make sure the physical address is valid
-    // this if unfortunately still a pretty ugly function.
     fn read_page(&self, physical_address: usize, offset: usize) -> Result<usize, FsError> {
         let virt_addr = physical_address + HHDM_OFFSET.get().expect("HHDM_OFFSET not set");
 

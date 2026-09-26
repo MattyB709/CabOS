@@ -14,7 +14,7 @@ use crate::{
         discovery::{BLOCK_DEVICES, CHAR_DEVICES},
     },
     fs::vfs::{Filesystem, FsError, INodeKey, INodeType, VNode},
-    memory::virtual_memory_2::MapBacking,
+    memory::user_virtual_memory::MapBacking,
     sync::{IntMutex, MutexLike},
 };
 

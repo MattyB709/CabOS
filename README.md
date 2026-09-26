@@ -1,5 +1,9 @@
 # CabOS
 
+[![Tests](https://github.com/MattyB709/common-rust/actions/workflows/tests.yml/badge.svg)](https://github.com/MattyB709/common-rust/actions/workflows/tests.yml)
+[![Lint](https://github.com/MattyB709/common-rust/actions/workflows/lint_checks.yml/badge.svg)](https://github.com/MattyB709/common-rust/actions/workflows/lint_checks.yml)
+[![License](https://img.shields.io/github/license/MattyB709/common-rust)](LICENSE)
+
 CabOS is a multicore operating system kernel written in Rust. It targets both x86-64 and AArch64 and currently includes userspace processes, virtual memory, an ext2-backed VFS, and a device discovery framework for device tree, ACPI tables, and PCI. This repository is a [fork](https://github.com/cs378-s26/common-rust), and it contains changes I made individually to an operating system that I helped build collaboratively, including running DOOM.
 
 ## Requirements

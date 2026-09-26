@@ -167,7 +167,7 @@ impl ArchTrait for Arch {
 
     fn shootdown_tlbs(space: u64, base: usize, length: usize) {
         let num_cores = MP_REQUEST.get_response().unwrap().cpus().len(); // TODO replace with global variable
-        let latch = Arc::new(AtomicUsize::new(num_cores - 1)); // there had better be at least one lol
+        let latch = Arc::new(AtomicUsize::new(num_cores - 1));
         let me = CORE_ID.get();
         for core in 0..num_cores {
             if core != me.0 {

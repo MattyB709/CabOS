@@ -146,9 +146,6 @@ pub fn set_user_address_space(space: u64) {
 pub fn vmap(space: u64, vaddr: u64, paddr: u64, options: PagingOptions) {
     let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset() as usize;
 
-    // back in my day, we didn't have no fancy x86 crate to parse our pages, we did it
-    // manually with bit shifts and masks, and we liked it that way
-    // TODO add a helper struct/function to make this less ugly
     let index_0 = ((vaddr >> 39) & 0x1FF) as usize;
     let index_1 = ((vaddr >> 30) & 0x1FF) as usize;
     let index_2 = ((vaddr >> 21) & 0x1FF) as usize;

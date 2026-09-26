@@ -25,7 +25,7 @@ use crate::{
     },
     event::Event,
     local_storage::{LocalStorage, LocalStorageHandler, impl_local_storage},
-    memory::virtual_memory_2::VirtualMemory,
+    memory::user_virtual_memory::VirtualMemory,
     mp::{CORE_ID, CoreId, MP_STAGE, MPStage, core_local},
     process::Process,
     state::{Irq, StateGuard},
@@ -103,6 +103,9 @@ impl LocalStorageHandler for ThreadLocalStorageHandler {
     }
 
     fn get_base() -> u64 {
+        // Keep the core-local cell lookup and value read on the same core. A
+        // preemption here could otherwise leave us reading the previous core's TLS base.
+        let _guard = StateGuard::<Irq>::guard();
         assert!(is_on_thread());
         CUR_TLS_ADDR.get()
     }

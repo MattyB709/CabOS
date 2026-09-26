@@ -8,8 +8,8 @@ use crate::{
     arch::{Arch, ArchTrait},
     fs::{file::File, vfs::VNode},
     memory::{
+        user_virtual_memory::{FileMapping, VirtualMemory},
         virtual_memory::PagingOptions,
-        virtual_memory_2::{FileMapping, VirtualMemory},
     },
     print::kprintln,
     sync::{IntMutex, MutexLike, Promise},
@@ -213,8 +213,8 @@ mod test {
     use crate::{
         arch::{Arch, ArchTrait},
         memory::{
-            physical_memory::frame_alloc, virtual_memory::PagingOptions,
-            virtual_memory_2::VirtualMemory,
+            physical_memory::frame_alloc, user_virtual_memory::VirtualMemory,
+            virtual_memory::PagingOptions,
         },
         process::Process,
         thread::yield_thread,
