@@ -10,7 +10,7 @@ use crate::{
     arch::{Arch, ArchTrait},
     memory::{
         physical_memory::{HHDM_OFFSET, REGIONS, frame_alloc},
-        virtual_memory_2::USERSPACE_END,
+        user_virtual_memory::USERSPACE_END,
     },
     print::kprintln,
     process::Process,
@@ -66,7 +66,6 @@ impl<'a> KeyAdapter<'a> for FreeTreeAdapter {
     }
 }
 
-// bad bad bad no spinning :( but we can't block yet
 static VMES: Once<Mutex<VirtualMemoryEntryContainer>> = Once::new(); // TODO RWLock
 
 #[unsafe(link_section = ".limine_requests")]
@@ -600,7 +599,6 @@ mod test {
 
     #[test_case]
     fn test_virtual_memory_threading() {
-        // TODO! why is this only dealloc'ing one VA?
         kprintln!("virtual memory threading test started");
         const THREADS: usize = 8;
         const ITERATIONS: usize = 16;

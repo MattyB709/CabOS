@@ -59,8 +59,6 @@ pub fn set_address_space(cr3: u64) {
     }
 }
 
-// TODO allocator wrapper is kinda dumb
-
 struct VMMProtector; // TODO make cr3-specific
 static VMM_PROTECTOR: Mutex<VMMProtector> = Mutex::new(VMMProtector {});
 

@@ -1,6 +1,6 @@
 use alloc::string::String;
 
-use crate::{devices::Device, memory::virtual_memory_2::MapBacking};
+use crate::{devices::Device, memory::user_virtual_memory::MapBacking};
 pub mod limine_framebuffer;
 pub mod uart_pl011;
 pub mod virtio_input;

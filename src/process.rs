@@ -9,7 +9,7 @@ use crate::{
     fs::{file::File, vfs::VNode},
     memory::{
         virtual_memory::PagingOptions,
-        virtual_memory_2::{FileMapping, VirtualMemory},
+        user_virtual_memory::{FileMapping, VirtualMemory},
     },
     print::kprintln,
     sync::{IntMutex, MutexLike, Promise},
@@ -214,7 +214,7 @@ mod test {
         arch::{Arch, ArchTrait},
         memory::{
             physical_memory::frame_alloc, virtual_memory::PagingOptions,
-            virtual_memory_2::VirtualMemory,
+            user_virtual_memory::VirtualMemory,
         },
         process::Process,
         thread::yield_thread,

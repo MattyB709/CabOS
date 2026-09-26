@@ -23,7 +23,6 @@ pub struct VirtIOBlkDiskDriver<H: Hal, T: Transport> {
     capacity: usize, // in sectors
 }
 
-// TODO: VERIFY THAT THIS IS THE CASE
 unsafe impl<H: Hal, T: Transport> Send for VirtIOBlkDiskDriver<H, T> {}
 unsafe impl<H: Hal, T: Transport> Sync for VirtIOBlkDiskDriver<H, T> {}
 

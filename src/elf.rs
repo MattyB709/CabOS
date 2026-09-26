@@ -5,7 +5,7 @@ use bitflags::bitflags;
 use crate::{
     Arch, ArchTrait,
     fs::vfs::VNode,
-    memory::{virtual_memory::PagingOptions, virtual_memory_2::FileMapping},
+    memory::{virtual_memory::PagingOptions, user_virtual_memory::FileMapping},
     print::kprintln,
     process::Process,
 };

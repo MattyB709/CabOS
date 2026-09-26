@@ -111,7 +111,7 @@ pub fn init_event_handler() {
                         );
                     }
                 }
-                yield_thread(); // TODO block somehow
+                yield_thread(); // TODO block 
             }
         }
     });

@@ -69,7 +69,7 @@ use crate::{
         fake::{FAKE, Fake},
         vfs::{INodeType, VFS},
     },
-    memory::{heap::init_malloc, virtual_memory::PagingOptions, virtual_memory_2::VirtualMemory},
+    memory::{heap::init_malloc, virtual_memory::PagingOptions, user_virtual_memory::VirtualMemory},
     mp::{CORE_ID, MP_STAGE, MPStage, init_cpu_local_table},
     print::{StackTrace, init_tty, kprintln},
     process::{Process, init_pid_allocator},

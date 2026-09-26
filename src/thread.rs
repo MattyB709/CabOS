@@ -25,7 +25,7 @@ use crate::{
     },
     event::Event,
     local_storage::{LocalStorage, LocalStorageHandler, impl_local_storage},
-    memory::virtual_memory_2::VirtualMemory,
+    memory::user_virtual_memory::VirtualMemory,
     mp::{CORE_ID, CoreId, MP_STAGE, MPStage, core_local},
     process::Process,
     state::{Irq, StateGuard},

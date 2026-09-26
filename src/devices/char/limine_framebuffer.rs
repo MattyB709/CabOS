@@ -6,7 +6,7 @@ use super::{CharDevice, CharDeviceError};
 use crate::{
     arch::{Arch, ArchTrait},
     devices::{Device, discovery::CHAR_DEVICES},
-    memory::{virtual_memory::PagingOptions, virtual_memory_2::MapBacking},
+    memory::{virtual_memory::PagingOptions, user_virtual_memory::MapBacking},
     sync::{IntMutex, MutexLike},
 };
 

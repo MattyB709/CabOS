@@ -1,5 +1,4 @@
 // heap
-// TODO: use virtual memory herez
 pub static mut THE_HEAP: [u8; 256 * 1024 * 1024] = [0; _];
 
 use alloc::string::{String, ToString};

@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Once;
 
 use crate::{
-    memory::virtual_memory_2::MapBacking,
+    memory::user_virtual_memory::MapBacking,
     sync::{IntMutex, MutexLike},
 };
 
