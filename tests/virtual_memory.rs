@@ -13,7 +13,7 @@ kernel_common::integration_test!({
             ext2::Ext2,
             vfs::{Filesystem, INodeType, VFS},
         },
-        memory::{virtual_memory::PagingOptions, user_virtual_memory::FileMapping},
+        memory::{user_virtual_memory::FileMapping, virtual_memory::PagingOptions},
         print::kprintln,
         process::Process,
         sync::MutexLike,
